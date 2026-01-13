@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Tiger face base (orange) -->
+  <ellipse cx="12" cy="13" rx="9" ry="8" fill="#FF9900"/>
+
+  <!-- Tiger ears -->
+  <ellipse cx="5" cy="6" rx="3" ry="3" fill="#FF9900"/>
+  <ellipse cx="19" cy="6" rx="3" ry="3" fill="#FF9900"/>
+  <ellipse cx="5" cy="6" rx="2" ry="2" fill="#FFE0B0"/>
+  <ellipse cx="19" cy="6" rx="2" ry="2" fill="#FFE0B0"/>
+
+  <!-- Tiger stripes -->
+  <path d="M8 8 Q12 10 8 13" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M16 8 Q12 10 16 13" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M12 7 L12 10" fill="none" stroke="#333" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Eyes -->
+  <ellipse cx="9" cy="12" rx="1.5" ry="2" fill="#333"/>
+  <ellipse cx="15" cy="12" rx="1.5" ry="2" fill="#333"/>
+
+  <!-- Nose -->
+  <ellipse cx="12" cy="15" rx="2" ry="1.5" fill="#FF6666"/>
+
+  <!-- Mouth/whisker area (white) -->
+  <ellipse cx="12" cy="17" rx="4" ry="2.5" fill="#FFFFFF"/>
+
+  <!-- Mouth -->
+  <path d="M10 17.5 Q12 19 14 17.5" fill="none" stroke="#333" stroke-width="0.8"/>
+
+  <!-- Checkmark badge -->
+  <circle cx="19" cy="19" r="4.5" fill="#00AA00"/>
+  <path d="M16.5 19 L18 20.5 L21.5 17" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

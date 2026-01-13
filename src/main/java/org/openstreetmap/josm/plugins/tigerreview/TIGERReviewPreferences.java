@@ -7,6 +7,8 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 
+import java.awt.BorderLayout;
+
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
@@ -37,7 +39,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JSpinner nodeVersionSpinner;
 
     public TIGERReviewPreferences() {
-        super("tiger_review", tr("TIGER Review"), tr("Settings for TIGER Review validator"));
+        super("preferences/tiger_review", tr("TIGER Review"), tr("Settings for TIGER Review validator"));
     }
 
     @Override
@@ -70,6 +72,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         gbc.gridx = 1;
         double currentVersion = Config.getPref().getDouble(PREF_NODE_MIN_AVG_VERSION, DEFAULT_NODE_MIN_AVG_VERSION);
         nodeVersionSpinner = new JSpinner(new SpinnerNumberModel(currentVersion, 1.0, 5.0, 0.1));
+        nodeVersionSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
         panel.add(nodeVersionSpinner, gbc);
 
         gbc.gridx = 2;
@@ -92,13 +95,9 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 "</body></html>");
         panel.add(explanation, gbc);
 
-        // Add spacer to push everything to top
-        gbc.gridy = 3;
-        gbc.weighty = 1.0;
-        gbc.fill = GridBagConstraints.BOTH;
-        panel.add(new JPanel(), gbc);
-
-        gui.createPreferenceTab(this).add(panel, GridBagConstraints.CENTER);
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.add(panel, BorderLayout.NORTH);
+        gui.createPreferenceTab(this).add(wrapper, BorderLayout.CENTER);
     }
 
     @Override
