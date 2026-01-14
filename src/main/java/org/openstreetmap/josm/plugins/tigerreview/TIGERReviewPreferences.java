@@ -97,7 +97,11 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
 
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.add(panel, BorderLayout.NORTH);
-        gui.createPreferenceTab(this).add(wrapper, BorderLayout.CENTER);
+        GridBagConstraints tabConstraints = new GridBagConstraints();
+        tabConstraints.fill = GridBagConstraints.BOTH;
+        tabConstraints.weightx = 1.0;
+        tabConstraints.weighty = 1.0;
+        gui.createPreferenceTab(this).add(wrapper, tabConstraints);
     }
 
     @Override
