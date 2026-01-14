@@ -2,6 +2,8 @@
 
 ## Project Overview
 
+**Mascot:** ROAR the tiger (Review Of American Roads)
+
 A JOSM plugin to help mappers review TIGER-imported roadways in the United States. The plugin creates validator warnings for roads with `tiger:reviewed=no` and provides one-click fixes based on corroborating evidence.
 
 ## Build Commands
@@ -32,7 +34,8 @@ src/main/java/org/openstreetmap/josm/plugins/tigerreview/
 └── checks/
     ├── ConnectedRoadCheck.java     # Name corroboration via connected roads
     ├── NodeVersionCheck.java       # Alignment verification via node versions
-    └── AddressCheck.java           # Name corroboration via nearby addresses
+    ├── AddressCheck.java           # Name corroboration via nearby addresses
+    └── SurfaceCheck.java           # Surface inference from connected roads
 ```
 
 ## Core Logic
@@ -44,8 +47,13 @@ src/main/java/org/openstreetmap/josm/plugins/tigerreview/
 2. A nearby address (within 50m default) has `addr:street` matching the road name
 
 **Alignment Verification** (proves the road geometry has been checked):
-1. Road has `tiger:reviewed=position` or `tiger:reviewed=alignment`
-2. Average version of nodes in the way > 1.5 (nodes have been edited)
+1. Road has `tiger:reviewed=position`, `tiger:reviewed=alignment`, or `tiger:reviewed=yes`
+2. Every node in the way has version > 1 (all nodes have been edited)
+3. Average version of nodes in the way > 1.5 (nodes have been edited)
+
+**Surface Inference** (suggests a surface tag):
+1. Connected roads at both ends have the same surface tag (high confidence)
+2. Connected road at one end has a surface tag (lower confidence)
 
 ### Decision Matrix
 
@@ -54,10 +62,11 @@ src/main/java/org/openstreetmap/josm/plugins/tigerreview/
 | `tiger:reviewed=no` + has name | Name + Alignment | Remove tag (auto-fix) |
 | `tiger:reviewed=no` + has name | Name only | Set `tiger:reviewed=name` (auto-fix) |
 | `tiger:reviewed=no` + has name | Alignment only | Warning: name not corroborated |
-| `tiger:reviewed=no` + has name | None | Warning: needs full review |
+| `tiger:reviewed=no` + has name | None | No warning (user can find these on their own) |
 | `tiger:reviewed=no` + no name | Alignment | Remove tag (auto-fix) |
-| `tiger:reviewed=no` + no name | None | Warning: needs alignment review |
+| `tiger:reviewed=no` + no name | None | No warning (user can find these on their own) |
 | `tiger:reviewed=name` | Alignment | Remove tag (auto-fix) |
+| Any road without `surface` tag | Connected roads have same surface | Suggest surface (auto-fix, Severity.OTHER) |
 
 ## Warning Codes
 
@@ -65,13 +74,18 @@ Using Wikidata TIGER ID (Q19939) as prefix:
 
 | Code | Constant | Description |
 |------|----------|-------------|
-| 19939001 | TIGER_FULLY_VERIFIED | Name + alignment verified |
-| 19939002 | TIGER_NAME_VERIFIED | Name only verified |
+| 19939001 | TIGER_FULLY_VERIFIED | Name + alignment verified (legacy, see specific codes below) |
+| 19939002 | TIGER_NAME_VERIFIED | Name only verified (legacy, see specific codes below) |
 | 19939003 | TIGER_NAME_NOT_CORROBORATED | Alignment OK, name not verified |
-| 19939004 | TIGER_NEEDS_REVIEW | No evidence found |
 | 19939005 | TIGER_UNNAMED_VERIFIED | Unnamed road, alignment verified |
 | 19939006 | TIGER_NAME_UPGRADE | Was name-only, now fully verified |
-| 19939007 | TIGER_UNNAMED_NEEDS_REVIEW | Unnamed road needs alignment review |
+| 19939008 | TIGER_NAME_VERIFIED_BOTH_ENDS | Name verified via connected roads at both ends |
+| 19939009 | TIGER_NAME_VERIFIED_ONE_END | Name verified via connected road at one end |
+| 19939010 | TIGER_NAME_VERIFIED_ADDRESS | Name verified via nearby addr:street |
+| 19939011 | TIGER_SURFACE_SUGGESTED_BOTH_ENDS | Surface inferred from connected roads at both ends |
+| 19939012 | TIGER_SURFACE_SUGGESTED_ONE_END | Surface inferred from connected road at one end |
+
+Note: Codes 19939004 (TIGER_NEEDS_REVIEW) and 19939007 (TIGER_UNNAMED_NEEDS_REVIEW) were removed - the plugin no longer warns on roads without evidence.
 
 ## Configuration
 
@@ -88,9 +102,15 @@ User preferences (JOSM Preferences → TIGERReview):
 
 2. **Grid-based spatial index for addresses** - Adapted from MapWithAI's StreetAddressTest for efficient nearby address lookups
 
-3. **Node version heuristic** - Average version > 1.5 indicates nodes have likely been moved/edited, suggesting alignment was checked
+3. **Node version heuristic** - Average version > 1.5 or all nodes having version > 1 indicates nodes have likely been moved/edited, suggesting alignment was checked
 
 4. **Separate warning types for unnamed roads** - Unnamed roads only need alignment review, not name verification
+
+5. **Only warn on actionable evidence** - Roads with no evidence don't generate warnings; users can find those via JOSM's search
+
+6. **Surface suggestions are low priority** - Surface inferences use Severity.OTHER so they don't clutter the main warning list
+
+7. **Granular name verification codes** - Different codes for both-ends, one-end, and address-based corroboration to help users understand confidence levels
 
 ## Testing
 
