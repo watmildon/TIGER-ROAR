@@ -87,6 +87,12 @@ public class TIGERReviewTest extends Test {
     private AddressCheck addressCheck;
     private SurfaceCheck surfaceCheck;
 
+    // Check enable flags
+    private boolean connectedRoadCheckEnabled;
+    private boolean addressCheckEnabled;
+    private boolean nodeVersionCheckEnabled;
+    private boolean surfaceCheckEnabled;
+
     public TIGERReviewTest() {
         super(tr("TIGER Review"), tr("Validates TIGER-imported roadways for review status"));
     }
@@ -95,6 +101,16 @@ public class TIGERReviewTest extends Test {
     public void startTest(org.openstreetmap.josm.gui.progress.ProgressMonitor monitor) {
         super.startTest(monitor);
 
+        // Read check enable flags from preferences
+        connectedRoadCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_CONNECTED_ROAD_CHECK, true);
+        addressCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_ADDRESS_CHECK, true);
+        nodeVersionCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_NODE_VERSION_CHECK, true);
+        surfaceCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_SURFACE_CHECK, true);
+
         // Initialize checks with user-configured values
         double maxAddressDistance = Config.getPref().getDouble(
                 TIGERReviewPreferences.PREF_ADDRESS_MAX_DISTANCE,
@@ -102,9 +118,12 @@ public class TIGERReviewTest extends Test {
         double minAvgVersion = Config.getPref().getDouble(
                 TIGERReviewPreferences.PREF_NODE_MIN_AVG_VERSION,
                 TIGERReviewPreferences.DEFAULT_NODE_MIN_AVG_VERSION);
+        double minPercentageEdited = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NODE_MIN_PERCENTAGE_EDITED,
+                TIGERReviewPreferences.DEFAULT_NODE_MIN_PERCENTAGE_EDITED);
 
         connectedRoadCheck = new ConnectedRoadCheck();
-        nodeVersionCheck = new NodeVersionCheck(minAvgVersion);
+        nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited);
         addressCheck = new AddressCheck(maxAddressDistance);
         surfaceCheck = new SurfaceCheck();
 
@@ -142,21 +161,27 @@ public class TIGERReviewTest extends Test {
         String name = way.get("name");
         boolean hasName = name != null && !name.isEmpty();
 
-        // Gather evidence
+        // Gather evidence (respecting enabled checks)
         ConnectionType connectionType = ConnectionType.NONE;
         boolean addressMatch = false;
         if (hasName) {
-            connectionType = connectedRoadCheck.checkConnection(way, name);
-            if (connectionType == ConnectionType.NONE) {
+            if (connectedRoadCheckEnabled) {
+                connectionType = connectedRoadCheck.checkConnection(way, name);
+            }
+            if (connectionType == ConnectionType.NONE && addressCheckEnabled) {
                 addressMatch = addressCheck.isNameCorroborated(way, name);
             }
         }
 
-        AlignmentResult alignmentResult = nodeVersionCheck.checkAlignment(way);
+        AlignmentResult alignmentResult = nodeVersionCheckEnabled
+                ? nodeVersionCheck.checkAlignment(way)
+                : new AlignmentResult(AlignmentEvidence.NONE, 0, 0);
         boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch;
 
-        // Check for surface suggestions from connected roads
-        SurfaceResult surfaceResult = surfaceCheck.checkSurface(way);
+        // Check for surface suggestions from connected roads (if enabled)
+        SurfaceResult surfaceResult = surfaceCheckEnabled
+                ? surfaceCheck.checkSurface(way)
+                : new SurfaceResult(null, false);
 
         // Apply decision matrix - only warn if we have actionable evidence
         if (hasName) {
@@ -219,7 +244,7 @@ public class TIGERReviewTest extends Test {
                 ? tr("connected roads at both ends")
                 : tr("connected road");
 
-        errors.add(TestError.builder(this, Severity.OTHER, code)
+        errors.add(TestError.builder(this, Severity.WARNING, code)
                 .message(tr("TIGERReview - Surface suggestion: {0} ({1})", surface, evidence))
                 .primitives(way)
                 .fix(() -> createAddSurfaceCommand(way, surface))
@@ -250,6 +275,8 @@ public class TIGERReviewTest extends Test {
     private String buildAlignmentEvidenceMessage(AlignmentResult result) {
         if (result.getEvidence() == AlignmentEvidence.ALL_NODES_EDITED) {
             return tr("all nodes edited");
+        } else if (result.getEvidence() == AlignmentEvidence.HIGH_PERCENTAGE_EDITED) {
+            return tr("{0}% of nodes edited", String.format("%.0f", result.getPercentageEdited() * 100));
         } else {
             return tr("avg node version {0}", String.format("%.1f", result.getAvgVersion()));
         }

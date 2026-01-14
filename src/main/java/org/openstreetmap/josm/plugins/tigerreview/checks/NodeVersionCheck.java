@@ -21,11 +21,21 @@ public class NodeVersionCheck {
 
     private static final String TIGER_REVIEWED = "tiger:reviewed";
 
+    /**
+     * Tag key for overriding node version in tests.
+     * When present on a node, this value is used instead of the actual OSM version.
+     */
+    public static final String TEST_VERSION_TAG = "__TEST_VERSION";
+
     /** Values that indicate alignment has been explicitly reviewed */
     private static final Set<String> ALIGNMENT_REVIEWED_VALUES = new HashSet<>(
             Arrays.asList("position", "alignment", "yes"));
 
     private final double minAvgVersion;
+    private final double minPercentageEdited;
+
+    /** Default minimum percentage of nodes that must be edited (version > 1) */
+    public static final double DEFAULT_MIN_PERCENTAGE_EDITED = 0.8;
 
     /**
      * Evidence types for alignment verification.
@@ -36,7 +46,9 @@ public class NodeVersionCheck {
         /** Average node version exceeds threshold */
         AVG_VERSION_HIGH,
         /** Every node in the way has been edited (version > 1) */
-        ALL_NODES_EDITED
+        ALL_NODES_EDITED,
+        /** High percentage of nodes have been edited (version > 1) */
+        HIGH_PERCENTAGE_EDITED
     }
 
     /**
@@ -45,10 +57,12 @@ public class NodeVersionCheck {
     public static class AlignmentResult {
         private final AlignmentEvidence evidence;
         private final double avgVersion;
+        private final double percentageEdited;
 
-        public AlignmentResult(AlignmentEvidence evidence, double avgVersion) {
+        public AlignmentResult(AlignmentEvidence evidence, double avgVersion, double percentageEdited) {
             this.evidence = evidence;
             this.avgVersion = avgVersion;
+            this.percentageEdited = percentageEdited;
         }
 
         public AlignmentEvidence getEvidence() {
@@ -59,18 +73,33 @@ public class NodeVersionCheck {
             return avgVersion;
         }
 
+        public double getPercentageEdited() {
+            return percentageEdited;
+        }
+
         public boolean isVerified() {
             return evidence != AlignmentEvidence.NONE;
         }
     }
 
     /**
-     * Create a new NodeVersionCheck.
+     * Create a new NodeVersionCheck with default percentage threshold.
      *
      * @param minAvgVersion Minimum average node version to consider alignment verified
      */
     public NodeVersionCheck(double minAvgVersion) {
+        this(minAvgVersion, DEFAULT_MIN_PERCENTAGE_EDITED);
+    }
+
+    /**
+     * Create a new NodeVersionCheck.
+     *
+     * @param minAvgVersion Minimum average node version to consider alignment verified
+     * @param minPercentageEdited Minimum percentage of nodes with version > 1 to consider alignment verified
+     */
+    public NodeVersionCheck(double minAvgVersion, double minPercentageEdited) {
         this.minAvgVersion = minAvgVersion;
+        this.minPercentageEdited = minPercentageEdited;
     }
 
     /**
@@ -83,25 +112,30 @@ public class NodeVersionCheck {
         // Check for explicit alignment review tags
         String tigerReviewed = way.get(TIGER_REVIEWED);
         if (tigerReviewed != null && ALIGNMENT_REVIEWED_VALUES.contains(tigerReviewed)) {
-            // Explicit tag means verified, but we still calculate avg for display
-            double avgVersion = calculateAverageNodeVersion(way);
-            return new AlignmentResult(AlignmentEvidence.AVG_VERSION_HIGH, avgVersion);
+            // Explicit tag means verified, but we still calculate stats for display
+            NodeStats stats = calculateNodeStats(way);
+            return new AlignmentResult(AlignmentEvidence.AVG_VERSION_HIGH, stats.avgVersion, stats.percentageEdited);
         }
 
         // Calculate node statistics
         NodeStats stats = calculateNodeStats(way);
 
-        // Check if all nodes have been edited
+        // Check if all nodes have been edited (strongest evidence)
         if (stats.allNodesEdited && stats.nodeCount > 0) {
-            return new AlignmentResult(AlignmentEvidence.ALL_NODES_EDITED, stats.avgVersion);
+            return new AlignmentResult(AlignmentEvidence.ALL_NODES_EDITED, stats.avgVersion, stats.percentageEdited);
+        }
+
+        // Check if high percentage of nodes have been edited
+        if (stats.percentageEdited >= minPercentageEdited && stats.nodeCount > 0) {
+            return new AlignmentResult(AlignmentEvidence.HIGH_PERCENTAGE_EDITED, stats.avgVersion, stats.percentageEdited);
         }
 
         // Check average node version
         if (stats.avgVersion > minAvgVersion) {
-            return new AlignmentResult(AlignmentEvidence.AVG_VERSION_HIGH, stats.avgVersion);
+            return new AlignmentResult(AlignmentEvidence.AVG_VERSION_HIGH, stats.avgVersion, stats.percentageEdited);
         }
 
-        return new AlignmentResult(AlignmentEvidence.NONE, stats.avgVersion);
+        return new AlignmentResult(AlignmentEvidence.NONE, stats.avgVersion, stats.percentageEdited);
     }
 
     /**
@@ -129,40 +163,67 @@ public class NodeVersionCheck {
      */
     private NodeStats calculateNodeStats(Way way) {
         if (way.getNodesCount() == 0) {
-            return new NodeStats(0, 0, false);
+            return new NodeStats(0, 0, false, 0);
         }
 
         double sumVersions = 0;
         int nodeCount = 0;
-        boolean allNodesEdited = true;
+        int editedCount = 0;
 
         for (Node node : way.getNodes()) {
+            // Use __TEST_VERSION tag if present, otherwise use actual version
+            int version = getEffectiveVersion(node);
+
             // Only count nodes that have been uploaded (version > 0)
-            if (node.getVersion() > 0) {
-                sumVersions += node.getVersion();
+            if (version > 0) {
+                sumVersions += version;
                 nodeCount++;
-                if (node.getVersion() <= 1) {
-                    allNodesEdited = false;
+                if (version > 1) {
+                    editedCount++;
                 }
             }
         }
 
         if (nodeCount == 0) {
-            return new NodeStats(0, 0, false);
+            return new NodeStats(0, 0, false, 0);
         }
 
-        return new NodeStats(sumVersions / nodeCount, nodeCount, allNodesEdited);
+        double percentageEdited = (double) editedCount / nodeCount;
+        boolean allNodesEdited = (editedCount == nodeCount);
+
+        return new NodeStats(sumVersions / nodeCount, nodeCount, allNodesEdited, percentageEdited);
+    }
+
+    /**
+     * Get the effective version of a node, using __TEST_VERSION tag if present.
+     *
+     * @param node The node to check
+     * @return The test version if __TEST_VERSION tag exists, otherwise the actual OSM version
+     */
+    private int getEffectiveVersion(Node node) {
+        String testVersion = node.get(TEST_VERSION_TAG);
+        if (testVersion != null) {
+            try {
+                return Integer.parseInt(testVersion);
+            } catch (NumberFormatException e) {
+                // Fall back to actual version if tag value is invalid
+                return node.getVersion();
+            }
+        }
+        return node.getVersion();
     }
 
     private static class NodeStats {
         final double avgVersion;
         final int nodeCount;
         final boolean allNodesEdited;
+        final double percentageEdited;
 
-        NodeStats(double avgVersion, int nodeCount, boolean allNodesEdited) {
+        NodeStats(double avgVersion, int nodeCount, boolean allNodesEdited, double percentageEdited) {
             this.avgVersion = avgVersion;
             this.nodeCount = nodeCount;
             this.allNodesEdited = allNodesEdited;
+            this.percentageEdited = percentageEdited;
         }
     }
 }
