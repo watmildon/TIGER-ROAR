@@ -1,0 +1,540 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version='0.6' generator='TIGERReview Test Data'>
+
+  <!--
+    Test Data for TIGERReview JOSM Plugin
+
+    This file contains test scenarios for all checks:
+    1. Connected Road Check (name corroboration via connected roads)
+    2. Address Check (name corroboration via nearby addr:street)
+    3. Node Version Check (alignment verification via node versions)
+    4. Surface Check (suggest surface from connected roads)
+
+    Load this file in JOSM and run the validator to test.
+
+    TESTING NOTE: Node versions are normally reset when loading OSM files.
+    To enable testing, nodes use the __TEST_VERSION tag which the plugin
+    reads instead of the actual OSM version. This allows testing version-based
+    alignment checks with local test data.
+  -->
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 1: Name corroborated at BOTH ENDS    -->
+  <!-- Three connected road segments sharing a name  -->
+  <!-- Middle segment has tiger:reviewed=no          -->
+  <!-- ============================================== -->
+
+  <node id='-1' lat='40.0000' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-2' lat='40.0005' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-3' lat='40.0010' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-4' lat='40.0015' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+
+  <!-- West segment - reviewed road with name -->
+  <way id='-101' version='1'>
+    <nd ref='-1'/>
+    <nd ref='-2'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Main Street'/>
+  </way>
+
+  <!-- Middle segment - tiger:reviewed=no, should get "name verified at both ends" -->
+  <way id='-102' version='1'>
+    <nd ref='-2'/>
+    <nd ref='-3'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Main Street'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- East segment - reviewed road with name -->
+  <way id='-103' version='1'>
+    <nd ref='-3'/>
+    <nd ref='-4'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Main Street'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 2: Name corroborated at ONE END      -->
+  <!-- Two connected road segments                   -->
+  <!-- ============================================== -->
+
+  <node id='-11' lat='40.0020' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-12' lat='40.0025' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-13' lat='40.0030' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- West segment - reviewed road with name -->
+  <way id='-111' version='1'>
+    <nd ref='-11'/>
+    <nd ref='-12'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Oak Avenue'/>
+  </way>
+
+  <!-- East segment - tiger:reviewed=no, should get "name verified at one end" -->
+  <way id='-112' version='1'>
+    <nd ref='-12'/>
+    <nd ref='-13'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Oak Avenue'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 3: Name NOT corroborated             -->
+  <!-- Connected roads have different names          -->
+  <!-- Should NOT generate a name warning            -->
+  <!-- ============================================== -->
+
+  <node id='-21' lat='40.0040' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-22' lat='40.0045' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-23' lat='40.0050' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- West segment - different name -->
+  <way id='-121' version='1'>
+    <nd ref='-21'/>
+    <nd ref='-22'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Elm Street'/>
+  </way>
+
+  <!-- East segment - tiger:reviewed=no with different name, no corroboration -->
+  <way id='-122' version='1'>
+    <nd ref='-22'/>
+    <nd ref='-23'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Pine Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 4: Connected road also unreviewed    -->
+  <!-- Both have tiger:reviewed=no - should NOT      -->
+  <!-- corroborate (unreviewed roads can't verify)   -->
+  <!-- ============================================== -->
+
+  <node id='-31' lat='40.0060' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-32' lat='40.0065' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-33' lat='40.0070' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- West segment - also unreviewed -->
+  <way id='-131' version='1'>
+    <nd ref='-31'/>
+    <nd ref='-32'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Cedar Lane'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- East segment - tiger:reviewed=no, connected to another unreviewed road -->
+  <way id='-132' version='1'>
+    <nd ref='-32'/>
+    <nd ref='-33'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Cedar Lane'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 5: Surface suggestion - BOTH ENDS    -->
+  <!-- Connected roads at both ends have same surface-->
+  <!-- ============================================== -->
+
+  <node id='-41' lat='40.0080' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-42' lat='40.0085' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-43' lat='40.0090' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-44' lat='40.0095' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- West segment - has surface=asphalt -->
+  <way id='-141' version='1'>
+    <nd ref='-41'/>
+    <nd ref='-42'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Paved Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <!-- Middle segment - no surface, should suggest asphalt from both ends -->
+  <way id='-142' version='1'>
+    <nd ref='-42'/>
+    <nd ref='-43'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Paved Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- East segment - has surface=asphalt -->
+  <way id='-143' version='1'>
+    <nd ref='-43'/>
+    <nd ref='-44'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Paved Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 6: Surface suggestion - ONE END      -->
+  <!-- Only one connected road has surface           -->
+  <!-- ============================================== -->
+
+  <node id='-51' lat='40.0100' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-52' lat='40.0105' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-53' lat='40.0110' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- West segment - has surface=gravel -->
+  <way id='-151' version='1'>
+    <nd ref='-51'/>
+    <nd ref='-52'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Gravel Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+  <!-- East segment - no surface, should suggest gravel from one end -->
+  <way id='-152' version='1'>
+    <nd ref='-52'/>
+    <nd ref='-53'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Gravel Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 7: Conflicting surfaces - NO suggest -->
+  <!-- Connected roads have different surfaces       -->
+  <!-- ============================================== -->
+
+  <node id='-61' lat='40.0120' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-62' lat='40.0125' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-63' lat='40.0130' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-64' lat='40.0135' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- West segment - asphalt -->
+  <way id='-161' version='1'>
+    <nd ref='-61'/>
+    <nd ref='-62'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Mixed Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <!-- Middle segment - should NOT get surface suggestion (conflict) -->
+  <way id='-162' version='1'>
+    <nd ref='-62'/>
+    <nd ref='-63'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Mixed Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- East segment - gravel (conflicts with west) -->
+  <way id='-163' version='1'>
+    <nd ref='-63'/>
+    <nd ref='-64'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Mixed Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 8: Unnamed road with alignment check -->
+  <!-- No name, but all nodes edited (version > 1)   -->
+  <!-- Should suggest removing tiger:reviewed        -->
+  <!-- ============================================== -->
+
+  <node id='-71' lat='40.0140' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='3'/>
+  </node>
+  <node id='-72' lat='40.0145' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-73' lat='40.0150' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='4'/>
+  </node>
+
+  <!-- Unnamed service road with all nodes edited -->
+  <way id='-171' version='1'>
+    <nd ref='-71'/>
+    <nd ref='-72'/>
+    <nd ref='-73'/>
+    <tag k='highway' v='service'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 9: tiger:reviewed=name upgrade       -->
+  <!-- Already has name reviewed, alignment now OK   -->
+  <!-- Should suggest removing tiger:reviewed        -->
+  <!-- ============================================== -->
+
+  <node id='-81' lat='40.0160' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='5'/>
+  </node>
+  <node id='-82' lat='40.0165' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='3'/>
+  </node>
+  <node id='-83' lat='40.0170' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='4'/>
+  </node>
+
+  <!-- Road with tiger:reviewed=name and edited nodes -->
+  <way id='-181' version='1'>
+    <nd ref='-81'/>
+    <nd ref='-82'/>
+    <nd ref='-83'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Upgraded Street'/>
+    <tag k='tiger:reviewed' v='name'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 10: Address check                    -->
+  <!-- Road near address with matching addr:street   -->
+  <!-- ============================================== -->
+
+  <node id='-91' lat='40.0180' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-92' lat='40.0185' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- Address node near the road -->
+  <node id='-93' lat='40.01825' lon='-74.9999'>
+    <tag k='addr:housenumber' v='123'/>
+    <tag k='addr:street' v='Address Test Road'/>
+  </node>
+
+  <!-- Road that should be corroborated by nearby address -->
+  <way id='-191' version='1'>
+    <nd ref='-91'/>
+    <nd ref='-92'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Address Test Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 11: Interior connection (should NOT  -->
+  <!-- corroborate - only endpoints count)           -->
+  <!-- ============================================== -->
+
+  <node id='-201' lat='40.0200' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-202' lat='40.0205' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-203' lat='40.0210' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-204' lat='40.0205' lon='-74.9995'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- Main road - tiger:reviewed=no -->
+  <way id='-211' version='1'>
+    <nd ref='-201'/>
+    <nd ref='-202'/>
+    <nd ref='-203'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Interior Test Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- Crossing road at interior node - should NOT corroborate -->
+  <way id='-212' version='1'>
+    <nd ref='-204'/>
+    <nd ref='-202'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Interior Test Road'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 12: Alignment verified, name not     -->
+  <!-- corroborated - should offer alignment fix     -->
+  <!-- ============================================== -->
+
+  <node id='-221' lat='40.0220' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='3'/>
+  </node>
+  <node id='-222' lat='40.0225' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-223' lat='40.0230' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='4'/>
+  </node>
+
+  <!-- Road with edited nodes but no name corroboration -->
+  <way id='-221' version='1'>
+    <nd ref='-221'/>
+    <nd ref='-222'/>
+    <nd ref='-223'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Uncorroborated Name Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 13: Already has surface - no suggest -->
+  <!-- Road already has surface tag                  -->
+  <!-- ============================================== -->
+
+  <node id='-231' lat='40.0240' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-232' lat='40.0245' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-233' lat='40.0250' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-234' lat='40.0255' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- Connected road with surface -->
+  <way id='-231' version='1'>
+    <nd ref='-231'/>
+    <nd ref='-232'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Already Surfaced Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <!-- Road already has surface - should NOT get suggestion -->
+  <way id='-232' version='1'>
+    <nd ref='-232'/>
+    <nd ref='-233'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Already Surfaced Road'/>
+    <tag k='surface' v='concrete'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- Connected road with surface -->
+  <way id='-233' version='1'>
+    <nd ref='-233'/>
+    <nd ref='-234'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Already Surfaced Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 14: High percentage edited (80%+)    -->
+  <!-- Tests the percentage threshold check          -->
+  <!-- 4 out of 5 nodes edited = 80%                 -->
+  <!-- ============================================== -->
+
+  <node id='-241' lat='40.0260' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-242' lat='40.0265' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='3'/>
+  </node>
+  <node id='-243' lat='40.0270' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-244' lat='40.0275' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-245' lat='40.0280' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='4'/>
+  </node>
+
+  <!-- Road with 80% of nodes edited - should trigger HIGH_PERCENTAGE_EDITED -->
+  <way id='-241' version='1'>
+    <nd ref='-241'/>
+    <nd ref='-242'/>
+    <nd ref='-243'/>
+    <nd ref='-244'/>
+    <nd ref='-245'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Percentage Test Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 15: Below percentage threshold       -->
+  <!-- Tests that roads below threshold don't match  -->
+  <!-- 2 out of 5 nodes edited = 40%                 -->
+  <!-- ============================================== -->
+
+  <node id='-251' lat='40.0290' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-252' lat='40.0295' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-253' lat='40.0300' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-254' lat='40.0305' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-255' lat='40.0310' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <!-- Road with only 40% of nodes edited - should NOT trigger alignment check -->
+  <way id='-251' version='1'>
+    <nd ref='-251'/>
+    <nd ref='-252'/>
+    <nd ref='-253'/>
+    <nd ref='-254'/>
+    <nd ref='-255'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Below Threshold Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+</osm>
