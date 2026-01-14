@@ -18,8 +18,11 @@ A JOSM plugin to help mappers review TIGER-imported roadways in the United State
 # Run JOSM with plugin loaded (for testing)
 ./gradlew runJosm --no-daemon
 
-# Build and install to local JOSM
+# Build and install to local JOSM (macOS)
 ./gradlew build --no-daemon && cp build/dist/TIGERReview.jar ~/Library/JOSM/plugins/
+
+# Build and install to local JOSM (Windows - matth's machine)
+./gradlew build --no-daemon && cp build/dist/TIGERReview.jar /c/Users/matth/AppData/Roaming/JOSM/plugins/
 ```
 
 Note: If you get gradle errors about missing files, run `rm -rf .gradle build` first.
@@ -49,7 +52,8 @@ src/main/java/org/openstreetmap/josm/plugins/tigerreview/
 **Alignment Verification** (proves the road geometry has been checked):
 1. Road has `tiger:reviewed=position`, `tiger:reviewed=alignment`, or `tiger:reviewed=yes`
 2. Every node in the way has version > 1 (all nodes have been edited)
-3. Average version of nodes in the way > 1.5 (nodes have been edited)
+3. High percentage (default 80%) of nodes have version > 1
+4. Average version of nodes in the way > 1.5 (nodes have been edited)
 
 **Surface Inference** (suggests a surface tag):
 1. Connected roads at both ends have the same surface tag (high confidence)
@@ -61,12 +65,12 @@ src/main/java/org/openstreetmap/josm/plugins/tigerreview/
 |------------|----------|--------|
 | `tiger:reviewed=no` + has name | Name + Alignment | Remove tag (auto-fix) |
 | `tiger:reviewed=no` + has name | Name only | Set `tiger:reviewed=name` (auto-fix) |
-| `tiger:reviewed=no` + has name | Alignment only | Warning: name not corroborated |
+| `tiger:reviewed=no` + has name | Alignment only | Set `tiger:reviewed=alignment` (auto-fix) |
 | `tiger:reviewed=no` + has name | None | No warning (user can find these on their own) |
 | `tiger:reviewed=no` + no name | Alignment | Remove tag (auto-fix) |
 | `tiger:reviewed=no` + no name | None | No warning (user can find these on their own) |
 | `tiger:reviewed=name` | Alignment | Remove tag (auto-fix) |
-| Any road without `surface` tag | Connected roads have same surface | Suggest surface (auto-fix, Severity.OTHER) |
+| Any road without `surface` tag | Connected roads have same surface | Suggest surface (auto-fix) |
 
 ## Warning Codes
 
@@ -95,6 +99,11 @@ User preferences (JOSM Preferences → TIGERReview):
 |-----|---------|-------------|
 | `tigerreview.address.maxDistance` | 50.0 | Max distance (meters) for address matching |
 | `tigerreview.node.minAvgVersion` | 1.5 | Min average node version for alignment verification |
+| `tigerreview.node.minPercentageEdited` | 0.8 | Min percentage of nodes with version > 1 (0.0-1.0) |
+| `tigerreview.check.connectedRoad` | true | Enable/disable connected road name check |
+| `tigerreview.check.address` | true | Enable/disable address name check |
+| `tigerreview.check.nodeVersion` | true | Enable/disable node version alignment check |
+| `tigerreview.check.surface` | true | Enable/disable surface suggestion check |
 
 ## Key Design Decisions
 
@@ -102,17 +111,33 @@ User preferences (JOSM Preferences → TIGERReview):
 
 2. **Grid-based spatial index for addresses** - Adapted from MapWithAI's StreetAddressTest for efficient nearby address lookups
 
-3. **Node version heuristic** - Average version > 1.5 or all nodes having version > 1 indicates nodes have likely been moved/edited, suggesting alignment was checked
+3. **Node version heuristic** - Average version > 1.5, all nodes having version > 1, or high percentage (80%+) of nodes having version > 1 indicates nodes have likely been moved/edited, suggesting alignment was checked
 
 4. **Separate warning types for unnamed roads** - Unnamed roads only need alignment review, not name verification
 
 5. **Only warn on actionable evidence** - Roads with no evidence don't generate warnings; users can find those via JOSM's search
 
-6. **Surface suggestions are low priority** - Surface inferences use Severity.OTHER so they don't clutter the main warning list
+6. **Surface suggestions as warnings** - Surface inferences use Severity.WARNING for visibility
 
 7. **Granular name verification codes** - Different codes for both-ends, one-end, and address-based corroboration to help users understand confidence levels
 
+8. **Only check road endpoints for name corroboration** - Interior node connections (roads crossing over/under) don't corroborate road names
+
 ## Testing
+
+### With Test Data File
+
+A comprehensive test file is provided at `test-data/tiger-review-test.osm` with 15 scenarios covering all checks.
+
+**Testing Note:** Node versions are normally reset when loading OSM files. To enable testing, nodes use the `__TEST_VERSION` tag which the plugin reads instead of the actual OSM version. This allows testing version-based alignment checks with local test data.
+
+1. Open JOSM
+2. File → Open → select `test-data/tiger-review-test.osm`
+3. Open Validator panel (Alt+Shift+V)
+4. Click Validate
+5. Verify warnings match expected results for each scenario
+
+### With Live Data
 
 1. Run `./gradlew runJosm --no-daemon`
 2. Download a US area with TIGER data (e.g., search for a small town)
