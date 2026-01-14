@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.tigerreview.checks;
 
+import java.util.List;
+
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
@@ -17,6 +19,57 @@ public class ConnectedRoadCheck {
     private static final String TIGER_REVIEWED = "tiger:reviewed";
 
     /**
+     * Types of connection evidence for name corroboration.
+     */
+    public enum ConnectionType {
+        /** No matching connected roads */
+        NONE,
+        /** Matching road connected at one end only */
+        ONE_END,
+        /** Matching roads connected at both ends */
+        BOTH_ENDS
+    }
+
+    /**
+     * Check what type of connection corroborates the way's name.
+     *
+     * @param way  The way to check
+     * @param name The name to look for on connected roads
+     * @return ConnectionType indicating the level of corroboration
+     */
+    public ConnectionType checkConnection(Way way, String name) {
+        if (name == null || name.isEmpty()) {
+            return ConnectionType.NONE;
+        }
+
+        List<Node> nodes = way.getNodes();
+        if (nodes.isEmpty()) {
+            return ConnectionType.NONE;
+        }
+
+        Node firstNode = nodes.get(0);
+        Node lastNode = nodes.get(nodes.size() - 1);
+
+        boolean matchAtFirst = hasCorroboratingConnection(firstNode, way, name);
+        boolean matchAtLast = hasCorroboratingConnection(lastNode, way, name);
+
+        if (matchAtFirst && matchAtLast) {
+            return ConnectionType.BOTH_ENDS;
+        } else if (matchAtFirst || matchAtLast) {
+            return ConnectionType.ONE_END;
+        }
+
+        // Check interior nodes for any match
+        for (int i = 1; i < nodes.size() - 1; i++) {
+            if (hasCorroboratingConnection(nodes.get(i), way, name)) {
+                return ConnectionType.ONE_END;
+            }
+        }
+
+        return ConnectionType.NONE;
+    }
+
+    /**
      * Check if the way's name is corroborated by a connected road.
      *
      * @param way  The way to check
@@ -24,21 +77,20 @@ public class ConnectedRoadCheck {
      * @return true if a connected reviewed road has the same name
      */
     public boolean isNameCorroborated(Way way, String name) {
-        if (name == null || name.isEmpty()) {
-            return false;
-        }
+        return checkConnection(way, name) != ConnectionType.NONE;
+    }
 
-        // Check each node in the way for connected roads
-        for (Node node : way.getNodes()) {
-            for (OsmPrimitive referrer : node.getReferrers()) {
-                if (referrer instanceof Way connectedWay && connectedWay != way) {
-                    if (isCorroboratingRoad(connectedWay, name)) {
-                        return true;
-                    }
+    /**
+     * Check if a node has any corroborating road connections.
+     */
+    private boolean hasCorroboratingConnection(Node node, Way excludeWay, String name) {
+        for (OsmPrimitive referrer : node.getReferrers()) {
+            if (referrer instanceof Way connectedWay && connectedWay != excludeWay) {
+                if (isCorroboratingRoad(connectedWay, name)) {
+                    return true;
                 }
             }
         }
-
         return false;
     }
 

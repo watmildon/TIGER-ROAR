@@ -16,7 +16,12 @@ import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.plugins.tigerreview.checks.AddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck;
+import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck.ConnectionType;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck;
+import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck.AlignmentEvidence;
+import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck.AlignmentResult;
+import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck;
+import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.SurfaceResult;
 import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
@@ -39,8 +44,7 @@ public class TIGERReviewTest extends Test {
     /** Has name, alignment OK, but name not verified */
     public static final int TIGER_NAME_NOT_CORROBORATED = CODE_PREFIX + 3;
 
-    /** Has name, no evidence at all */
-    public static final int TIGER_NEEDS_REVIEW = CODE_PREFIX + 4;
+    // CODE_PREFIX + 4 was TIGER_NEEDS_REVIEW - removed (no longer warning on roads without evidence)
 
     /** Unnamed road with alignment verified - can remove tiger:reviewed */
     public static final int TIGER_UNNAMED_VERIFIED = CODE_PREFIX + 5;
@@ -48,8 +52,22 @@ public class TIGERReviewTest extends Test {
     /** Has tiger:reviewed=name, alignment now verified - can remove tag */
     public static final int TIGER_NAME_UPGRADE = CODE_PREFIX + 6;
 
-    /** Unnamed road needs alignment review */
-    public static final int TIGER_UNNAMED_NEEDS_REVIEW = CODE_PREFIX + 7;
+    // CODE_PREFIX + 7 was TIGER_UNNAMED_NEEDS_REVIEW - removed (no longer warning on roads without evidence)
+
+    /** Name verified via connected roads at both ends */
+    public static final int TIGER_NAME_VERIFIED_BOTH_ENDS = CODE_PREFIX + 8;
+
+    /** Name verified via connected road at one end */
+    public static final int TIGER_NAME_VERIFIED_ONE_END = CODE_PREFIX + 9;
+
+    /** Name verified via nearby addr:street */
+    public static final int TIGER_NAME_VERIFIED_ADDRESS = CODE_PREFIX + 10;
+
+    /** Surface can be inferred from connected roads at both ends */
+    public static final int TIGER_SURFACE_SUGGESTED_BOTH_ENDS = CODE_PREFIX + 11;
+
+    /** Surface can be inferred from connected road at one end */
+    public static final int TIGER_SURFACE_SUGGESTED_ONE_END = CODE_PREFIX + 12;
 
     /** Highway types we care about (classified roads) */
     public static final Set<String> CLASSIFIED_HIGHWAYS = Collections.unmodifiableSet(
@@ -67,6 +85,7 @@ public class TIGERReviewTest extends Test {
     private ConnectedRoadCheck connectedRoadCheck;
     private NodeVersionCheck nodeVersionCheck;
     private AddressCheck addressCheck;
+    private SurfaceCheck surfaceCheck;
 
     public TIGERReviewTest() {
         super(tr("TIGER Review"), tr("Validates TIGER-imported roadways for review status"));
@@ -87,6 +106,7 @@ public class TIGERReviewTest extends Test {
         connectedRoadCheck = new ConnectedRoadCheck();
         nodeVersionCheck = new NodeVersionCheck(minAvgVersion);
         addressCheck = new AddressCheck(maxAddressDistance);
+        surfaceCheck = new SurfaceCheck();
 
         // Build spatial index for addresses
         if (partialSelection) {
@@ -123,67 +143,147 @@ public class TIGERReviewTest extends Test {
         boolean hasName = name != null && !name.isEmpty();
 
         // Gather evidence
-        boolean nameCorroborated = false;
+        ConnectionType connectionType = ConnectionType.NONE;
+        boolean addressMatch = false;
         if (hasName) {
-            nameCorroborated = connectedRoadCheck.isNameCorroborated(way, name)
-                    || addressCheck.isNameCorroborated(way, name);
+            connectionType = connectedRoadCheck.checkConnection(way, name);
+            if (connectionType == ConnectionType.NONE) {
+                addressMatch = addressCheck.isNameCorroborated(way, name);
+            }
         }
 
-        boolean alignmentVerified = nodeVersionCheck.isAlignmentVerified(way);
+        AlignmentResult alignmentResult = nodeVersionCheck.checkAlignment(way);
+        boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch;
 
-        // Apply decision matrix
+        // Check for surface suggestions from connected roads
+        SurfaceResult surfaceResult = surfaceCheck.checkSurface(way);
+
+        // Apply decision matrix - only warn if we have actionable evidence
         if (hasName) {
-            if (nameCorroborated && alignmentVerified) {
+            if (nameCorroborated && alignmentResult.isVerified()) {
                 // Full verification - can remove tiger:reviewed tag
-                errors.add(TestError.builder(this, Severity.WARNING, TIGER_FULLY_VERIFIED)
-                        .message(tr("TIGERReview - Road fully verified, can remove tiger:reviewed tag"))
+                String message = buildFullyVerifiedMessage(connectionType, addressMatch, alignmentResult);
+                int code = getNameVerificationCode(connectionType, addressMatch);
+                errors.add(TestError.builder(this, Severity.WARNING, code)
+                        .message(tr("TIGERReview - Fully verified, can remove tiger:reviewed ({0})", message))
                         .primitives(way)
                         .fix(() -> createRemoveTagCommand(way))
                         .build());
             } else if (nameCorroborated) {
                 // Name only - change to tiger:reviewed=name
-                errors.add(TestError.builder(this, Severity.WARNING, TIGER_NAME_VERIFIED)
-                        .message(tr("TIGERReview - Name verified, alignment still needs review"))
+                String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch);
+                int code = getNameVerificationCode(connectionType, addressMatch);
+                errors.add(TestError.builder(this, Severity.WARNING, code)
+                        .message(tr("TIGERReview - Name verified ({0}), alignment still needs review", nameEvidence))
                         .primitives(way)
                         .fix(() -> createSetNameReviewedCommand(way))
                         .build());
-            } else if (alignmentVerified) {
+            } else if (alignmentResult.isVerified()) {
                 // Alignment only - name needs verification
+                String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
                 errors.add(TestError.builder(this, Severity.WARNING, TIGER_NAME_NOT_CORROBORATED)
-                        .message(tr("TIGERReview - Alignment OK but name not corroborated"))
-                        .primitives(way)
-                        .build());
-            } else {
-                // No evidence - needs full review
-                errors.add(TestError.builder(this, Severity.WARNING, TIGER_NEEDS_REVIEW)
-                        .message(tr("TIGERReview - Needs review, no corroborating evidence found"))
+                        .message(tr("TIGERReview - Alignment verified ({0}), name not corroborated", alignmentEvidence))
                         .primitives(way)
                         .build());
             }
+            // No evidence at all - don't warn, user can find these on their own
         } else {
-            // Unnamed road
-            if (alignmentVerified) {
-                // Can remove tag since alignment is verified and no name to check
+            // Unnamed road - only warn if we have alignment evidence (actionable)
+            if (alignmentResult.isVerified()) {
+                String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
                 errors.add(TestError.builder(this, Severity.WARNING, TIGER_UNNAMED_VERIFIED)
-                        .message(tr("TIGERReview - Unnamed road, alignment verified, can remove tiger:reviewed"))
+                        .message(tr("TIGERReview - Unnamed road verified ({0}), can remove tiger:reviewed", alignmentEvidence))
                         .primitives(way)
                         .fix(() -> createRemoveTagCommand(way))
                         .build());
-            } else {
-                // Needs alignment review
-                errors.add(TestError.builder(this, Severity.WARNING, TIGER_UNNAMED_NEEDS_REVIEW)
-                        .message(tr("TIGERReview - Unnamed road, needs alignment review"))
-                        .primitives(way)
-                        .build());
             }
+            // No evidence - don't warn, user can find these on their own
         }
+
+        // Add surface suggestion if available (independent of other checks)
+        if (surfaceResult.hasSuggestion()) {
+            addSurfaceSuggestion(way, surfaceResult);
+        }
+    }
+
+    /**
+     * Add a surface suggestion warning with auto-fix.
+     */
+    private void addSurfaceSuggestion(Way way, SurfaceResult surfaceResult) {
+        String surface = surfaceResult.getSuggestedSurface();
+        int code = surfaceResult.isBothEnds()
+                ? TIGER_SURFACE_SUGGESTED_BOTH_ENDS
+                : TIGER_SURFACE_SUGGESTED_ONE_END;
+        String evidence = surfaceResult.isBothEnds()
+                ? tr("connected roads at both ends")
+                : tr("connected road");
+
+        errors.add(TestError.builder(this, Severity.OTHER, code)
+                .message(tr("TIGERReview - Surface suggestion: {0} ({1})", surface, evidence))
+                .primitives(way)
+                .fix(() -> createAddSurfaceCommand(way, surface))
+                .build());
+    }
+
+    private Command createAddSurfaceCommand(Way way, String surface) {
+        return new ChangePropertyCommand(way, "surface", surface);
+    }
+
+    /**
+     * Build a message describing how the name was verified.
+     */
+    private String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch) {
+        if (connectionType == ConnectionType.BOTH_ENDS) {
+            return tr("connected roads at both ends");
+        } else if (connectionType == ConnectionType.ONE_END) {
+            return tr("connected road");
+        } else if (addressMatch) {
+            return tr("nearby addr:street");
+        }
+        return "";
+    }
+
+    /**
+     * Build a message describing how the alignment was verified.
+     */
+    private String buildAlignmentEvidenceMessage(AlignmentResult result) {
+        if (result.getEvidence() == AlignmentEvidence.ALL_NODES_EDITED) {
+            return tr("all nodes edited");
+        } else {
+            return tr("avg node version {0}", String.format("%.1f", result.getAvgVersion()));
+        }
+    }
+
+    /**
+     * Build the full verification message with both name and alignment evidence.
+     */
+    private String buildFullyVerifiedMessage(ConnectionType connectionType, boolean addressMatch, AlignmentResult alignmentResult) {
+        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch);
+        String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
+        return tr("name: {0}, alignment: {1}", nameEvidence, alignmentEvidence);
+    }
+
+    /**
+     * Get the appropriate warning code based on how the name was verified.
+     */
+    private int getNameVerificationCode(ConnectionType connectionType, boolean addressMatch) {
+        if (connectionType == ConnectionType.BOTH_ENDS) {
+            return TIGER_NAME_VERIFIED_BOTH_ENDS;
+        } else if (connectionType == ConnectionType.ONE_END) {
+            return TIGER_NAME_VERIFIED_ONE_END;
+        } else if (addressMatch) {
+            return TIGER_NAME_VERIFIED_ADDRESS;
+        }
+        return TIGER_NAME_VERIFIED;
     }
 
     private void checkNameReviewedRoad(Way way) {
         // Road already has name verified, check if alignment is now also verified
-        if (nodeVersionCheck.isAlignmentVerified(way)) {
+        AlignmentResult alignmentResult = nodeVersionCheck.checkAlignment(way);
+        if (alignmentResult.isVerified()) {
+            String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
             errors.add(TestError.builder(this, Severity.WARNING, TIGER_NAME_UPGRADE)
-                    .message(tr("TIGERReview - Can be fully verified, alignment now confirmed"))
+                    .message(tr("TIGERReview - Can be fully verified, alignment now confirmed ({0})", alignmentEvidence))
                     .primitives(way)
                     .fix(() -> createRemoveTagCommand(way))
                     .build());
@@ -205,6 +305,7 @@ public class TIGERReviewTest extends Test {
         connectedRoadCheck = null;
         nodeVersionCheck = null;
         addressCheck = null;
+        surfaceCheck = null;
         super.endTest();
     }
 }
