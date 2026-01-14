@@ -179,11 +179,12 @@ public class TIGERReviewTest extends Test {
                         .fix(() -> createSetNameReviewedCommand(way))
                         .build());
             } else if (alignmentResult.isVerified()) {
-                // Alignment only - name needs verification
+                // Alignment only - name needs verification, offer fix to set tiger:reviewed=alignment
                 String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
                 errors.add(TestError.builder(this, Severity.WARNING, TIGER_NAME_NOT_CORROBORATED)
                         .message(tr("TIGERReview - Alignment verified ({0}), name not corroborated", alignmentEvidence))
                         .primitives(way)
+                        .fix(() -> createSetAlignmentReviewedCommand(way))
                         .build());
             }
             // No evidence at all - don't warn, user can find these on their own
@@ -297,6 +298,10 @@ public class TIGERReviewTest extends Test {
 
     private Command createSetNameReviewedCommand(Way way) {
         return new ChangePropertyCommand(way, TIGER_REVIEWED, "name");
+    }
+
+    private Command createSetAlignmentReviewedCommand(Way way) {
+        return new ChangePropertyCommand(way, TIGER_REVIEWED, "alignment");
     }
 
     @Override

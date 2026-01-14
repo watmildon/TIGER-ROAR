@@ -59,13 +59,8 @@ public class ConnectedRoadCheck {
             return ConnectionType.ONE_END;
         }
 
-        // Check interior nodes for any match
-        for (int i = 1; i < nodes.size() - 1; i++) {
-            if (hasCorroboratingConnection(nodes.get(i), way, name)) {
-                return ConnectionType.ONE_END;
-            }
-        }
-
+        // Only check endpoints - interior connections don't corroborate the name
+        // (a road crossing over or under doesn't confirm the name is correct)
         return ConnectionType.NONE;
     }
 
