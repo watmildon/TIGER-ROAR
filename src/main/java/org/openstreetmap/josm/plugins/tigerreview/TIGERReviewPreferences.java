@@ -43,8 +43,17 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for enabling surface check */
     public static final String PREF_ENABLE_SURFACE_CHECK = "tigerreview.check.surface";
 
+    /** Preference key for enabling NAD (National Address Database) check */
+    public static final String PREF_ENABLE_NAD_CHECK = "tigerreview.check.nad";
+
     /** Preference key for minimum percentage of nodes edited threshold */
     public static final String PREF_NODE_MIN_PERCENTAGE_EDITED = "tigerreview.node.minPercentageEdited";
+
+    /** Preference key for NAD maximum address matching distance */
+    public static final String PREF_NAD_MAX_DISTANCE = "tigerreview.nad.maxDistance";
+
+    /** Default maximum distance for NAD address matching (meters) */
+    public static final double DEFAULT_NAD_MAX_DISTANCE = 50.0;
 
     /** Default maximum distance for address matching (meters) */
     public static final double DEFAULT_ADDRESS_MAX_DISTANCE = 50.0;
@@ -58,10 +67,12 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JSpinner addressDistanceSpinner;
     private JSpinner nodeVersionSpinner;
     private JSpinner nodePercentageSpinner;
+    private JSpinner nadDistanceSpinner;
     private JCheckBox connectedRoadCheckBox;
     private JCheckBox addressCheckBox;
     private JCheckBox nodeVersionCheckBox;
     private JCheckBox surfaceCheckBox;
+    private JCheckBox nadCheckBox;
 
     public TIGERReviewPreferences() {
         super("preferences/tiger_review", tr("TIGER Review"), tr("Settings for TIGER Review validator"));
@@ -108,6 +119,12 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         surfaceCheckBox = new JCheckBox(tr("Surface check (suggest surface from connected roads)"));
         surfaceCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_SURFACE_CHECK, true));
         panel.add(surfaceCheckBox, gbc);
+
+        // NAD check
+        gbc.gridy = row++;
+        nadCheckBox = new JCheckBox(tr("NAD check (name corroboration via National Address Database - US only)"));
+        nadCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_NAD_CHECK, false));
+        panel.add(nadCheckBox, gbc);
 
         // === Parameters Section ===
         gbc.gridy = row++;
@@ -174,6 +191,24 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
 
         row++;
 
+        // NAD address matching distance
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        panel.add(new JLabel(tr("NAD address matching distance (meters):")), gbc);
+
+        gbc.gridx = 1;
+        double currentNadDistance = Config.getPref().getDouble(PREF_NAD_MAX_DISTANCE, DEFAULT_NAD_MAX_DISTANCE);
+        nadDistanceSpinner = new JSpinner(new SpinnerNumberModel(currentNadDistance, 10.0, 500.0, 10.0));
+        nadDistanceSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
+        panel.add(nadDistanceSpinner, gbc);
+
+        gbc.gridx = 2;
+        gbc.weightx = 1.0;
+        panel.add(new JLabel(tr("(default: {0})", DEFAULT_NAD_MAX_DISTANCE)), gbc);
+        gbc.weightx = 0;
+
+        row++;
+
         // Explanatory text
         gbc.gridx = 0;
         gbc.gridy = row;
@@ -189,6 +224,10 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 "<br><br>" +
                 tr("<b>Percentage of nodes edited:</b> Roads where at least this percentage of nodes " +
                    "have been edited (version > 1) are considered to have verified alignment.") +
+                "<br><br>" +
+                tr("<b>NAD check:</b> When enabled, downloads address data from the National Address Database " +
+                   "for US areas and uses it to corroborate road names. Data is fetched in the background " +
+                   "when a US dataset is loaded.") +
                 "</body></html>");
         panel.add(explanation, gbc);
 
@@ -208,12 +247,14 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putBoolean(PREF_ENABLE_ADDRESS_CHECK, addressCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_NODE_VERSION_CHECK, nodeVersionCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_SURFACE_CHECK, surfaceCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_ENABLE_NAD_CHECK, nadCheckBox.isSelected());
 
         // Save parameter settings
         Config.getPref().putDouble(PREF_ADDRESS_MAX_DISTANCE, (Double) addressDistanceSpinner.getValue());
         Config.getPref().putDouble(PREF_NODE_MIN_AVG_VERSION, (Double) nodeVersionSpinner.getValue());
         // Convert percentage (0-100) back to decimal (0.0-1.0) for storage
         Config.getPref().putDouble(PREF_NODE_MIN_PERCENTAGE_EDITED, (Double) nodePercentageSpinner.getValue() / 100.0);
+        Config.getPref().putDouble(PREF_NAD_MAX_DISTANCE, (Double) nadDistanceSpinner.getValue());
         return false; // No restart required
     }
 }

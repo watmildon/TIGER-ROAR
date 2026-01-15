@@ -34,11 +34,16 @@ src/main/java/org/openstreetmap/josm/plugins/tigerreview/
 ├── TIGERReviewPlugin.java          # Entry point, registers validator test
 ├── TIGERReviewTest.java            # Main validator logic
 ├── TIGERReviewPreferences.java     # Settings UI panel
-└── checks/
-    ├── ConnectedRoadCheck.java     # Name corroboration via connected roads
-    ├── NodeVersionCheck.java       # Alignment verification via node versions
-    ├── AddressCheck.java           # Name corroboration via nearby addresses
-    └── SurfaceCheck.java           # Surface inference from connected roads
+├── checks/
+│   ├── ConnectedRoadCheck.java     # Name corroboration via connected roads
+│   ├── NodeVersionCheck.java       # Alignment verification via node versions
+│   ├── AddressCheck.java           # Name corroboration via nearby OSM addresses
+│   ├── NadAddressCheck.java        # Name corroboration via NAD (external API)
+│   └── SurfaceCheck.java           # Surface inference from connected roads
+└── external/
+    ├── NadClient.java              # NAD API client (ESRI ArcGIS REST)
+    ├── NadDataCache.java           # Thread-safe cache with spatial index
+    └── NadDataLoader.java          # Background loader, triggers on US data
 ```
 
 ## Core Logic
@@ -47,7 +52,8 @@ src/main/java/org/openstreetmap/josm/plugins/tigerreview/
 
 **Name Corroboration** (proves the road name is correct):
 1. A connected road (sharing a node) has the same name AND is NOT `tiger:reviewed=no`
-2. A nearby address (within 50m default) has `addr:street` matching the road name
+2. A nearby OSM address (within 50m default) has `addr:street` matching the road name
+3. A nearby NAD address (external API, opt-in) has `addr:street` matching the road name
 
 **Alignment Verification** (proves the road geometry has been checked):
 1. Road has `tiger:reviewed=position`, `tiger:reviewed=alignment`, or `tiger:reviewed=yes`
@@ -88,6 +94,7 @@ Using Wikidata TIGER ID (Q19939) as prefix:
 | 19939010 | TIGER_NAME_VERIFIED_ADDRESS | Name verified via nearby addr:street |
 | 19939011 | TIGER_SURFACE_SUGGESTED_BOTH_ENDS | Surface inferred from connected roads at both ends |
 | 19939012 | TIGER_SURFACE_SUGGESTED_ONE_END | Surface inferred from connected road at one end |
+| 19939013 | TIGER_NAME_VERIFIED_NAD | Name verified via NAD (National Address Database) |
 
 Note: Codes 19939004 (TIGER_NEEDS_REVIEW) and 19939007 (TIGER_UNNAMED_NEEDS_REVIEW) were removed - the plugin no longer warns on roads without evidence.
 
@@ -104,6 +111,8 @@ User preferences (JOSM Preferences → TIGERReview):
 | `tigerreview.check.address` | true | Enable/disable address name check |
 | `tigerreview.check.nodeVersion` | true | Enable/disable node version alignment check |
 | `tigerreview.check.surface` | true | Enable/disable surface suggestion check |
+| `tigerreview.check.nad` | false | Enable/disable NAD external address check (US only) |
+| `tigerreview.nad.maxDistance` | 50.0 | Max distance (meters) for NAD address matching |
 
 ## Key Design Decisions
 
@@ -122,6 +131,12 @@ User preferences (JOSM Preferences → TIGERReview):
 7. **Granular name verification codes** - Different codes for both-ends, one-end, and address-based corroboration to help users understand confidence levels
 
 8. **Only check road endpoints for name corroboration** - Interior node connections (roads crossing over/under) don't corroborate road names
+
+9. **NAD check is opt-in** - External API calls require explicit user consent; disabled by default
+
+10. **Background NAD data fetch** - NAD data is fetched when a US dataset is loaded, avoiding validation delays. **Important:** NAD check must be enabled *before* downloading data, as the fetch only triggers on the `layerAdded` event.
+
+11. **Area limits for NAD queries** - Large areas (> 0.25 sq degrees) skip NAD fetch to avoid API overload
 
 ## Testing
 
@@ -157,3 +172,4 @@ All provided by gradle-josm-plugin:
 - [MapWithAI StreetAddressTest](https://github.com/JOSM/MapWithAI/blob/f3659fc3edb4e07679560bce389f260b3042ebbd/src/main/java/org/openstreetmap/josm/plugins/mapwithai/data/validation/tests/StreetAddressTest.java) - Reference for spatial indexing
 - [Key:tiger:reviewed](https://wiki.openstreetmap.org/wiki/Key:tiger:reviewed) - Tag documentation
 - [TIGER fixup](https://wiki.openstreetmap.org/wiki/TIGER_fixup) - Background on TIGER review process
+- [NAD ESRI Endpoint](https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0) - National Address Database API

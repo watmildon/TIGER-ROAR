@@ -17,6 +17,7 @@ import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.plugins.tigerreview.checks.AddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck.ConnectionType;
+import org.openstreetmap.josm.plugins.tigerreview.checks.NadAddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck.AlignmentEvidence;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck.AlignmentResult;
@@ -69,6 +70,9 @@ public class TIGERReviewTest extends Test {
     /** Surface can be inferred from connected road at one end */
     public static final int TIGER_SURFACE_SUGGESTED_ONE_END = CODE_PREFIX + 12;
 
+    /** Name verified via NAD (National Address Database) */
+    public static final int TIGER_NAME_VERIFIED_NAD = CODE_PREFIX + 13;
+
     /** Highway types we care about (classified roads) */
     public static final Set<String> CLASSIFIED_HIGHWAYS = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList(
@@ -86,12 +90,14 @@ public class TIGERReviewTest extends Test {
     private NodeVersionCheck nodeVersionCheck;
     private AddressCheck addressCheck;
     private SurfaceCheck surfaceCheck;
+    private NadAddressCheck nadAddressCheck;
 
     // Check enable flags
     private boolean connectedRoadCheckEnabled;
     private boolean addressCheckEnabled;
     private boolean nodeVersionCheckEnabled;
     private boolean surfaceCheckEnabled;
+    private boolean nadCheckEnabled;
 
     public TIGERReviewTest() {
         super(tr("TIGER Review"), tr("Validates TIGER-imported roadways for review status"));
@@ -110,6 +116,8 @@ public class TIGERReviewTest extends Test {
                 TIGERReviewPreferences.PREF_ENABLE_NODE_VERSION_CHECK, true);
         surfaceCheckEnabled = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_ENABLE_SURFACE_CHECK, true);
+        nadCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
 
         // Initialize checks with user-configured values
         double maxAddressDistance = Config.getPref().getDouble(
@@ -121,11 +129,15 @@ public class TIGERReviewTest extends Test {
         double minPercentageEdited = Config.getPref().getDouble(
                 TIGERReviewPreferences.PREF_NODE_MIN_PERCENTAGE_EDITED,
                 TIGERReviewPreferences.DEFAULT_NODE_MIN_PERCENTAGE_EDITED);
+        double maxNadDistance = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NAD_MAX_DISTANCE,
+                TIGERReviewPreferences.DEFAULT_NAD_MAX_DISTANCE);
 
         connectedRoadCheck = new ConnectedRoadCheck();
         nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited);
         addressCheck = new AddressCheck(maxAddressDistance);
         surfaceCheck = new SurfaceCheck();
+        nadAddressCheck = new NadAddressCheck(maxNadDistance);
 
         // Build spatial index for addresses
         if (partialSelection) {
@@ -164,6 +176,7 @@ public class TIGERReviewTest extends Test {
         // Gather evidence (respecting enabled checks)
         ConnectionType connectionType = ConnectionType.NONE;
         boolean addressMatch = false;
+        boolean nadMatch = false;
         if (hasName) {
             if (connectedRoadCheckEnabled) {
                 connectionType = connectedRoadCheck.checkConnection(way, name);
@@ -171,12 +184,16 @@ public class TIGERReviewTest extends Test {
             if (connectionType == ConnectionType.NONE && addressCheckEnabled) {
                 addressMatch = addressCheck.isNameCorroborated(way, name);
             }
+            // Try NAD check if no other name corroboration found
+            if (connectionType == ConnectionType.NONE && !addressMatch && nadCheckEnabled) {
+                nadMatch = nadAddressCheck.isNameCorroborated(way, name);
+            }
         }
 
         AlignmentResult alignmentResult = nodeVersionCheckEnabled
                 ? nodeVersionCheck.checkAlignment(way)
                 : new AlignmentResult(AlignmentEvidence.NONE, 0, 0);
-        boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch;
+        boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch || nadMatch;
 
         // Check for surface suggestions from connected roads (if enabled)
         SurfaceResult surfaceResult = surfaceCheckEnabled
@@ -187,8 +204,8 @@ public class TIGERReviewTest extends Test {
         if (hasName) {
             if (nameCorroborated && alignmentResult.isVerified()) {
                 // Full verification - can remove tiger:reviewed tag
-                String message = buildFullyVerifiedMessage(connectionType, addressMatch, alignmentResult);
-                int code = getNameVerificationCode(connectionType, addressMatch);
+                String message = buildFullyVerifiedMessage(connectionType, addressMatch, nadMatch, alignmentResult);
+                int code = getNameVerificationCode(connectionType, addressMatch, nadMatch);
                 errors.add(TestError.builder(this, Severity.WARNING, code)
                         .message(tr("TIGERReview - Fully verified, can remove tiger:reviewed ({0})", message))
                         .primitives(way)
@@ -196,8 +213,8 @@ public class TIGERReviewTest extends Test {
                         .build());
             } else if (nameCorroborated) {
                 // Name only - change to tiger:reviewed=name
-                String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch);
-                int code = getNameVerificationCode(connectionType, addressMatch);
+                String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch);
+                int code = getNameVerificationCode(connectionType, addressMatch, nadMatch);
                 errors.add(TestError.builder(this, Severity.WARNING, code)
                         .message(tr("TIGERReview - Name verified ({0}), alignment still needs review", nameEvidence))
                         .primitives(way)
@@ -258,13 +275,15 @@ public class TIGERReviewTest extends Test {
     /**
      * Build a message describing how the name was verified.
      */
-    private String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch) {
+    private String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch, boolean nadMatch) {
         if (connectionType == ConnectionType.BOTH_ENDS) {
             return tr("connected roads at both ends");
         } else if (connectionType == ConnectionType.ONE_END) {
             return tr("connected road");
         } else if (addressMatch) {
             return tr("nearby addr:street");
+        } else if (nadMatch) {
+            return tr("NAD address data");
         }
         return "";
     }
@@ -285,8 +304,8 @@ public class TIGERReviewTest extends Test {
     /**
      * Build the full verification message with both name and alignment evidence.
      */
-    private String buildFullyVerifiedMessage(ConnectionType connectionType, boolean addressMatch, AlignmentResult alignmentResult) {
-        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch);
+    private String buildFullyVerifiedMessage(ConnectionType connectionType, boolean addressMatch, boolean nadMatch, AlignmentResult alignmentResult) {
+        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch);
         String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
         return tr("name: {0}, alignment: {1}", nameEvidence, alignmentEvidence);
     }
@@ -294,13 +313,15 @@ public class TIGERReviewTest extends Test {
     /**
      * Get the appropriate warning code based on how the name was verified.
      */
-    private int getNameVerificationCode(ConnectionType connectionType, boolean addressMatch) {
+    private int getNameVerificationCode(ConnectionType connectionType, boolean addressMatch, boolean nadMatch) {
         if (connectionType == ConnectionType.BOTH_ENDS) {
             return TIGER_NAME_VERIFIED_BOTH_ENDS;
         } else if (connectionType == ConnectionType.ONE_END) {
             return TIGER_NAME_VERIFIED_ONE_END;
         } else if (addressMatch) {
             return TIGER_NAME_VERIFIED_ADDRESS;
+        } else if (nadMatch) {
+            return TIGER_NAME_VERIFIED_NAD;
         }
         return TIGER_NAME_VERIFIED;
     }
@@ -338,6 +359,7 @@ public class TIGERReviewTest extends Test {
         nodeVersionCheck = null;
         addressCheck = null;
         surfaceCheck = null;
+        nadAddressCheck = null;
         super.endTest();
     }
 }
