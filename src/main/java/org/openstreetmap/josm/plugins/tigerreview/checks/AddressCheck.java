@@ -150,7 +150,8 @@ public class AddressCheck {
                 }
 
                 for (AddressData addr : addresses) {
-                    if (name.equals(addr.streetName)) {
+                    // Case-insensitive comparison to handle minor casing differences
+                    if (name.equalsIgnoreCase(addr.streetName)) {
                         // Check actual distance to segment
                         double dist = distanceToSegment(addr.location, en1, en2);
                         if (dist <= maxDistanceMeters) {
