@@ -220,13 +220,15 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         panel.add(new JLabel(tr("Additional bot/importer usernames:")), gbc);
 
         gbc.gridx = 1;
-        gbc.gridwidth = 2;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
         String currentBotUsernames = Config.getPref().get(PREF_ADDITIONAL_BOT_USERNAMES, "");
-        additionalBotUsernamesField = new JTextField(currentBotUsernames, 30);
+        additionalBotUsernamesField = new JTextField(currentBotUsernames, 20);
+        additionalBotUsernamesField.setPreferredSize(addressDistanceSpinner.getPreferredSize());
         panel.add(additionalBotUsernamesField, gbc);
-        gbc.gridwidth = 1;
-        gbc.fill = GridBagConstraints.NONE;
+
+        gbc.gridx = 2;
+        gbc.weightx = 1.0;
+        panel.add(new JLabel(tr("(semicolon-separated)")), gbc);
+        gbc.weightx = 0;
 
         row++;
 
