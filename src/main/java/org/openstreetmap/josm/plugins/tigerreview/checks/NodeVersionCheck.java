@@ -6,26 +6,64 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.User;
 import org.openstreetmap.josm.data.osm.Way;
 
 /**
- * Checks if a road's alignment has been verified based on node versions
+ * Checks if a road's alignment has been verified based on node edit history
  * and explicit tiger:reviewed tags.
  *
  * Alignment is considered verified if:
  * - The way has tiger:reviewed=position or tiger:reviewed=alignment, OR
- * - The average version of nodes in the way exceeds a threshold (default 1.5), OR
- * - Every node in the way has version > 1 (all nodes have been edited)
+ * - A high percentage of nodes have been edited by humans (not bots), OR
+ * - Every node in the way has been edited by a human
+ *
+ * <p>The check distinguishes between bot/importer edits and human edits by
+ * examining the last editor of each node. Nodes last touched by known TIGER
+ * importers or cleanup bots are not considered "edited" for alignment purposes,
+ * even if they have version > 1.</p>
+ *
+ * @see <a href="https://wiki.openstreetmap.org/wiki/TIGER_fixup/Overpass_queries">TIGER fixup queries</a>
+ * @see <a href="https://wiki.openstreetmap.org/wiki/TIGER_fixup/node_tags">TIGER node tags cleanup</a>
  */
 public class NodeVersionCheck {
 
     private static final String TIGER_REVIEWED = "tiger:reviewed";
 
     /**
+     * Known bot and importer accounts whose edits don't indicate alignment review.
+     * Nodes last touched by these accounts should not count as "edited."
+     *
+     * <p>History of TIGER automated edits:</p>
+     * <ul>
+     *   <li>DaveHansenTiger (Aug 2007 - May 2008): Original TIGER 2005 import</li>
+     *   <li>Milenko (Oct - Dec 2007): Pennsylvania counties import</li>
+     *   <li>woodpeck_fixbot (Sept 2009 - Jan 2010): Removed superfluous tags from ~170M nodes</li>
+     *   <li>balrog-kun (March - April 2010): Abbreviation expansion</li>
+     *   <li>bot-mode (Dec 2012 - April 2013): Abbreviation expansion</li>
+     * </ul>
+     */
+    private static final Set<String> TIGER_AUTOMATED_USERNAMES = Set.of(
+            // Original TIGER importers (2007-2008)
+            "DaveHansenTiger",
+            "Milenko",
+            // Cleanup bots
+            "woodpeck_fixbot",
+            "balrog-kun",
+            "bot-mode"
+    );
+
+    /**
      * Tag key for overriding node version in tests.
      * When present on a node, this value is used instead of the actual OSM version.
      */
     public static final String TEST_VERSION_TAG = "__TEST_VERSION";
+
+    /**
+     * Tag key for overriding node user in tests.
+     * When present on a node, this value is used instead of the actual OSM user.
+     */
+    public static final String TEST_USER_TAG = "__TEST_USER";
 
     /** Values that indicate alignment has been explicitly reviewed */
     private static final Set<String> ALIGNMENT_REVIEWED_VALUES = new HashSet<>(
@@ -34,7 +72,7 @@ public class NodeVersionCheck {
     private final double minAvgVersion;
     private final double minPercentageEdited;
 
-    /** Default minimum percentage of nodes that must be edited (version > 1) */
+    /** Default minimum percentage of nodes that must be edited by humans (not bots) */
     public static final double DEFAULT_MIN_PERCENTAGE_EDITED = 0.8;
 
     /**
@@ -45,9 +83,9 @@ public class NodeVersionCheck {
         NONE,
         /** Average node version exceeds threshold */
         AVG_VERSION_HIGH,
-        /** Every node in the way has been edited (version > 1) */
+        /** Every node in the way has been edited by a human (not a bot) */
         ALL_NODES_EDITED,
-        /** High percentage of nodes have been edited (version > 1) */
+        /** High percentage of nodes have been edited by a human (not a bot) */
         HIGH_PERCENTAGE_EDITED
     }
 
@@ -95,7 +133,7 @@ public class NodeVersionCheck {
      * Create a new NodeVersionCheck.
      *
      * @param minAvgVersion Minimum average node version to consider alignment verified
-     * @param minPercentageEdited Minimum percentage of nodes with version > 1 to consider alignment verified
+     * @param minPercentageEdited Minimum percentage of nodes edited by humans to consider alignment verified
      */
     public NodeVersionCheck(double minAvgVersion, double minPercentageEdited) {
         this.minAvgVersion = minAvgVersion;
@@ -160,6 +198,9 @@ public class NodeVersionCheck {
 
     /**
      * Calculate statistics about node versions in a way.
+     *
+     * <p>A node is considered "edited" based on who last modified it,
+     * not just its version number. See {@link #isNodeEdited(Node)}.</p>
      */
     private NodeStats calculateNodeStats(Way way) {
         if (way.getNodesCount() == 0) {
@@ -178,7 +219,8 @@ public class NodeVersionCheck {
             if (version > 0) {
                 sumVersions += version;
                 nodeCount++;
-                if (version > 1) {
+                // Check if node was edited by a human (not a bot/importer)
+                if (isNodeEdited(node)) {
                     editedCount++;
                 }
             }
@@ -211,6 +253,69 @@ public class NodeVersionCheck {
             }
         }
         return node.getVersion();
+    }
+
+    /**
+     * Get the effective username of a node's last editor, using __TEST_USER tag if present.
+     *
+     * @param node The node to check
+     * @return The username, or null if not available
+     */
+    private String getEffectiveUsername(Node node) {
+        // Check for test override first
+        String testUser = node.get(TEST_USER_TAG);
+        if (testUser != null) {
+            return testUser;
+        }
+
+        // Get actual user from OSM data
+        User user = node.getUser();
+        if (user != null) {
+            String name = user.getName();
+            if (name != null && !name.isEmpty()) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Determines if a node has been edited by a human (not a bot/importer).
+     *
+     * <p>A node is considered "edited" if:</p>
+     * <ul>
+     *   <li>It was last edited by a user NOT in the known bot/importer list, OR</li>
+     *   <li>If no user info is available, it has version > 2 (fallback heuristic)</li>
+     * </ul>
+     *
+     * <p>The fallback uses version > 2 because versions 1-2 typically represent
+     * the original TIGER import plus bot cleanup (woodpeck_fixbot, etc.).</p>
+     *
+     * @param node The node to check
+     * @return true if the node appears to have been human-edited
+     */
+    private boolean isNodeEdited(Node node) {
+        int version = getEffectiveVersion(node);
+
+        // Version 0 means not uploaded yet
+        if (version <= 0) {
+            return false;
+        }
+
+        // Check who last edited this node
+        String username = getEffectiveUsername(node);
+        if (username != null) {
+            // If last editor was a bot/importer, node is NOT considered edited
+            if (TIGER_AUTOMATED_USERNAMES.contains(username)) {
+                return false;
+            }
+            // If last editor was a real user, node IS edited (even v1)
+            return true;
+        }
+
+        // Fallback: if no user info available, use version > 2 heuristic
+        // (accounts for import + bot cleanup)
+        return version > 2;
     }
 
     private static class NodeStats {
