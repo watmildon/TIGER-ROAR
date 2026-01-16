@@ -43,7 +43,7 @@ public class NodeVersionCheck {
      *   <li>bot-mode (Dec 2012 - April 2013): Abbreviation expansion</li>
      * </ul>
      */
-    private static final Set<String> TIGER_AUTOMATED_USERNAMES = Set.of(
+    private static final Set<String> BUILTIN_AUTOMATED_USERNAMES = Set.of(
             // Original TIGER importers (2007-2008)
             "DaveHansenTiger",
             "Milenko",
@@ -71,6 +71,7 @@ public class NodeVersionCheck {
 
     private final double minAvgVersion;
     private final double minPercentageEdited;
+    private final Set<String> automatedUsernames;
 
     /** Default minimum percentage of nodes that must be edited by humans (not bots) */
     public static final double DEFAULT_MIN_PERCENTAGE_EDITED = 0.8;
@@ -121,12 +122,22 @@ public class NodeVersionCheck {
     }
 
     /**
-     * Create a new NodeVersionCheck with default percentage threshold.
+     * Create a new NodeVersionCheck with default percentage threshold and no additional bot usernames.
      *
      * @param minAvgVersion Minimum average node version to consider alignment verified
      */
     public NodeVersionCheck(double minAvgVersion) {
-        this(minAvgVersion, DEFAULT_MIN_PERCENTAGE_EDITED);
+        this(minAvgVersion, DEFAULT_MIN_PERCENTAGE_EDITED, "");
+    }
+
+    /**
+     * Create a new NodeVersionCheck with no additional bot usernames.
+     *
+     * @param minAvgVersion Minimum average node version to consider alignment verified
+     * @param minPercentageEdited Minimum percentage of nodes edited by humans to consider alignment verified
+     */
+    public NodeVersionCheck(double minAvgVersion, double minPercentageEdited) {
+        this(minAvgVersion, minPercentageEdited, "");
     }
 
     /**
@@ -134,10 +145,41 @@ public class NodeVersionCheck {
      *
      * @param minAvgVersion Minimum average node version to consider alignment verified
      * @param minPercentageEdited Minimum percentage of nodes edited by humans to consider alignment verified
+     * @param additionalBotUsernames Semicolon-delimited list of additional usernames to treat as bots
      */
-    public NodeVersionCheck(double minAvgVersion, double minPercentageEdited) {
+    public NodeVersionCheck(double minAvgVersion, double minPercentageEdited, String additionalBotUsernames) {
         this.minAvgVersion = minAvgVersion;
         this.minPercentageEdited = minPercentageEdited;
+        this.automatedUsernames = buildAutomatedUsernamesSet(additionalBotUsernames);
+    }
+
+    /**
+     * Build the complete set of automated usernames by combining built-in and user-configured names.
+     *
+     * @param additionalUsernames Semicolon-delimited list of additional usernames (may be null or empty)
+     * @return Combined set of all automated usernames
+     */
+    private static Set<String> buildAutomatedUsernamesSet(String additionalUsernames) {
+        Set<String> combined = new HashSet<>(BUILTIN_AUTOMATED_USERNAMES);
+        if (additionalUsernames != null && !additionalUsernames.trim().isEmpty()) {
+            for (String username : additionalUsernames.split(";")) {
+                String trimmed = username.trim();
+                if (!trimmed.isEmpty()) {
+                    combined.add(trimmed);
+                }
+            }
+        }
+        return combined;
+    }
+
+    /**
+     * Get the built-in set of automated usernames.
+     * Useful for displaying to users which usernames are already included.
+     *
+     * @return Unmodifiable set of built-in automated usernames
+     */
+    public static Set<String> getBuiltinAutomatedUsernames() {
+        return BUILTIN_AUTOMATED_USERNAMES;
     }
 
     /**
@@ -306,7 +348,7 @@ public class NodeVersionCheck {
         String username = getEffectiveUsername(node);
         if (username != null) {
             // If last editor was a bot/importer, node is NOT considered edited
-            if (TIGER_AUTOMATED_USERNAMES.contains(username)) {
+            if (automatedUsernames.contains(username)) {
                 return false;
             }
             // If last editor was a real user, node IS edited (even v1)

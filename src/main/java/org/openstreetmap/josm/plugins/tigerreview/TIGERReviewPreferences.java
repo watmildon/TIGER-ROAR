@@ -14,6 +14,7 @@ import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
+import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 
 import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
@@ -52,6 +53,9 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for NAD maximum address matching distance */
     public static final String PREF_NAD_MAX_DISTANCE = "tigerreview.nad.maxDistance";
 
+    /** Preference key for additional bot/importer usernames (semicolon-delimited) */
+    public static final String PREF_ADDITIONAL_BOT_USERNAMES = "tigerreview.node.additionalBotUsernames";
+
     /** Default maximum distance for NAD address matching (meters) */
     public static final double DEFAULT_NAD_MAX_DISTANCE = 50.0;
 
@@ -73,6 +77,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox nodeVersionCheckBox;
     private JCheckBox surfaceCheckBox;
     private JCheckBox nadCheckBox;
+    private JTextField additionalBotUsernamesField;
 
     public TIGERReviewPreferences() {
         super("preferences/tiger_review", tr("TIGER Review"), tr("Settings for TIGER Review validator"));
@@ -209,6 +214,22 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
 
         row++;
 
+        // Additional bot usernames
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        panel.add(new JLabel(tr("Additional bot/importer usernames:")), gbc);
+
+        gbc.gridx = 1;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        String currentBotUsernames = Config.getPref().get(PREF_ADDITIONAL_BOT_USERNAMES, "");
+        additionalBotUsernamesField = new JTextField(currentBotUsernames, 30);
+        panel.add(additionalBotUsernamesField, gbc);
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+
+        row++;
+
         // Explanatory text
         gbc.gridx = 0;
         gbc.gridy = row;
@@ -228,6 +249,10 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 tr("<b>NAD check:</b> When enabled, downloads address data from the National Address Database " +
                    "for US areas and uses it to corroborate road names. Data is fetched in the background " +
                    "when a US dataset is loaded.") +
+                "<br><br>" +
+                tr("<b>Additional bot usernames:</b> Semicolon-separated list of additional usernames to treat " +
+                   "as bots/importers. Nodes last edited by these users won''t count toward alignment verification. " +
+                   "Built-in: DaveHansenTiger, Milenko, woodpeck_fixbot, balrog-kun, bot-mode.") +
                 "</body></html>");
         panel.add(explanation, gbc);
 
@@ -255,6 +280,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         // Convert percentage (0-100) back to decimal (0.0-1.0) for storage
         Config.getPref().putDouble(PREF_NODE_MIN_PERCENTAGE_EDITED, (Double) nodePercentageSpinner.getValue() / 100.0);
         Config.getPref().putDouble(PREF_NAD_MAX_DISTANCE, (Double) nadDistanceSpinner.getValue());
+        Config.getPref().put(PREF_ADDITIONAL_BOT_USERNAMES, additionalBotUsernamesField.getText().trim());
         return false; // No restart required
     }
 }
