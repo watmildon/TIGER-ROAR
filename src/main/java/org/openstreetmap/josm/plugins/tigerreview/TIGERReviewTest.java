@@ -73,7 +73,7 @@ public class TIGERReviewTest extends Test {
     /** Name verified via NAD (National Address Database) */
     public static final int TIGER_NAME_VERIFIED_NAD = CODE_PREFIX + 13;
 
-    /** Highway types we care about (classified roads) */
+    /** Highway types we care about for TIGER review (based on TagInfo combinations) */
     public static final Set<String> CLASSIFIED_HIGHWAYS = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList(
                     "motorway", "motorway_link",
@@ -82,7 +82,9 @@ public class TIGERReviewTest extends Test {
                     "secondary", "secondary_link",
                     "tertiary", "tertiary_link",
                     "unclassified", "residential",
-                    "living_street", "service", "road")));
+                    "living_street", "service", "road",
+                    "track",
+                    "path", "footway", "cycleway", "pedestrian")));
 
     private static final String TIGER_REVIEWED = "tiger:reviewed";
 
@@ -132,9 +134,11 @@ public class TIGERReviewTest extends Test {
         double maxNadDistance = Config.getPref().getDouble(
                 TIGERReviewPreferences.PREF_NAD_MAX_DISTANCE,
                 TIGERReviewPreferences.DEFAULT_NAD_MAX_DISTANCE);
+        String additionalBotUsernames = Config.getPref().get(
+                TIGERReviewPreferences.PREF_ADDITIONAL_BOT_USERNAMES, "");
 
         connectedRoadCheck = new ConnectedRoadCheck();
-        nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited);
+        nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited, additionalBotUsernames);
         addressCheck = new AddressCheck(maxAddressDistance);
         surfaceCheck = new SurfaceCheck();
         nadAddressCheck = new NadAddressCheck(maxNadDistance);
