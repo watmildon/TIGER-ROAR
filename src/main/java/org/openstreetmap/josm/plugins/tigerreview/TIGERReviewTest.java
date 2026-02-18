@@ -4,13 +4,16 @@ package org.openstreetmap.josm.plugins.tigerreview;
 import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
+import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.Test;
@@ -104,6 +107,7 @@ public class TIGERReviewTest extends Test {
     private boolean nodeVersionCheckEnabled;
     private boolean surfaceCheckEnabled;
     private boolean nadCheckEnabled;
+    private boolean stripTigerTags;
 
     public TIGERReviewTest() {
         super(tr("TIGER Review"), tr("Validates TIGER-imported roadways for review status"));
@@ -124,6 +128,8 @@ public class TIGERReviewTest extends Test {
                 TIGERReviewPreferences.PREF_ENABLE_SURFACE_CHECK, true);
         nadCheckEnabled = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
+        stripTigerTags = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, false);
 
         // Initialize checks with user-configured values
         double maxAddressDistance = Config.getPref().getDouble(
@@ -382,6 +388,18 @@ public class TIGERReviewTest extends Test {
     }
 
     private Command createRemoveTagCommand(Way way) {
+        if (stripTigerTags) {
+            List<Command> commands = new ArrayList<>();
+            for (String key : way.getKeys().keySet()) {
+                if (key.startsWith("tiger:")) {
+                    commands.add(new ChangePropertyCommand(way, key, null));
+                }
+            }
+            if (commands.isEmpty()) {
+                return new ChangePropertyCommand(way, TIGER_REVIEWED, null);
+            }
+            return SequenceCommand.wrapIfNeeded(tr("Remove TIGER tags"), commands);
+        }
         return new ChangePropertyCommand(way, TIGER_REVIEWED, null);
     }
 

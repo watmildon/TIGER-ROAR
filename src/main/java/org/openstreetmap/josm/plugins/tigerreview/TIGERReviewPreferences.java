@@ -56,6 +56,9 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for additional bot/importer usernames (semicolon-delimited) */
     public static final String PREF_ADDITIONAL_BOT_USERNAMES = "tigerreview.node.additionalBotUsernames";
 
+    /** Preference key for stripping all tiger:* tags on fully verified roads */
+    public static final String PREF_STRIP_TIGER_TAGS = "tigerreview.fix.stripTigerTags";
+
     /** Default maximum distance for NAD address matching (meters) */
     public static final double DEFAULT_NAD_MAX_DISTANCE = 50.0;
 
@@ -77,6 +80,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox nodeVersionCheckBox;
     private JCheckBox surfaceCheckBox;
     private JCheckBox nadCheckBox;
+    private JCheckBox stripTigerTagsCheckBox;
     private JTextField additionalBotUsernamesField;
 
     public TIGERReviewPreferences() {
@@ -130,6 +134,22 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         nadCheckBox = new JCheckBox(tr("NAD check (name corroboration via National Address Database - US only)"));
         nadCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_NAD_CHECK, false));
         panel.add(nadCheckBox, gbc);
+
+        // === Fix Behavior Section ===
+        gbc.gridy = row++;
+        gbc.gridwidth = 3;
+        gbc.insets = new Insets(15, 5, 5, 5);
+        JLabel fixLabel = new JLabel(tr("Fix Behavior:"));
+        fixLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
+        panel.add(fixLabel, gbc);
+
+        gbc.insets = new Insets(5, 5, 5, 5);
+
+        // Strip all tiger: tags
+        gbc.gridy = row++;
+        stripTigerTagsCheckBox = new JCheckBox(tr("Strip all tiger:* tags when fully verified (not just tiger:reviewed)"));
+        stripTigerTagsCheckBox.setSelected(Config.getPref().getBoolean(PREF_STRIP_TIGER_TAGS, false));
+        panel.add(stripTigerTagsCheckBox, gbc);
 
         // === Parameters Section ===
         gbc.gridy = row++;
@@ -255,6 +275,10 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 tr("<b>Additional bot usernames:</b> Semicolon-separated list of additional usernames to treat " +
                    "as bots/importers. Nodes last edited by these users won''t count toward alignment verification. " +
                    "Built-in: DaveHansenTiger, Milenko, woodpeck_fixbot, balrog-kun, bot-mode.") +
+                "<br><br>" +
+                tr("<b>Strip all tiger:* tags:</b> When enabled, fixing a fully verified road removes all tags " +
+                   "starting with ''tiger:'' (e.g. tiger:cfcc, tiger:county, tiger:name_base), not just tiger:reviewed. " +
+                   "These tags are remnants of the original TIGER import and are generally no longer needed.") +
                 "</body></html>");
         panel.add(explanation, gbc);
 
@@ -275,6 +299,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putBoolean(PREF_ENABLE_NODE_VERSION_CHECK, nodeVersionCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_SURFACE_CHECK, surfaceCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_NAD_CHECK, nadCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_STRIP_TIGER_TAGS, stripTigerTagsCheckBox.isSelected());
 
         // Save parameter settings
         Config.getPref().putDouble(PREF_ADDRESS_MAX_DISTANCE, (Double) addressDistanceSpinner.getValue());
