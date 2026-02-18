@@ -1,6 +1,7 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.tigerreview;
 
+import static org.openstreetmap.josm.tools.I18n.marktr;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.util.Arrays;
@@ -87,6 +88,9 @@ public class TIGERReviewTest extends Test {
                     "path", "footway", "cycleway", "pedestrian")));
 
     private static final String TIGER_REVIEWED = "tiger:reviewed";
+
+    /** Group message for all TIGERReview warnings in the validator tree */
+    private static final String GROUP_MESSAGE = tr("TIGERReview");
 
     private ConnectedRoadCheck connectedRoadCheck;
     private NodeVersionCheck nodeVersionCheck;
@@ -211,7 +215,7 @@ public class TIGERReviewTest extends Test {
                 String message = buildFullyVerifiedMessage(connectionType, addressMatch, nadMatch, alignmentResult);
                 int code = getNameVerificationCode(connectionType, addressMatch, nadMatch);
                 errors.add(TestError.builder(this, Severity.WARNING, code)
-                        .message(tr("TIGERReview - Fully verified, can remove tiger:reviewed ({0})", message))
+                        .message(GROUP_MESSAGE, marktr("Fully verified, can remove tiger:reviewed ({0})"), message)
                         .primitives(way)
                         .fix(() -> createRemoveTagCommand(way))
                         .build());
@@ -220,7 +224,7 @@ public class TIGERReviewTest extends Test {
                 String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch);
                 int code = getNameVerificationCode(connectionType, addressMatch, nadMatch);
                 errors.add(TestError.builder(this, Severity.WARNING, code)
-                        .message(tr("TIGERReview - Name verified ({0}), alignment still needs review", nameEvidence))
+                        .message(GROUP_MESSAGE, marktr("Name verified ({0}), alignment still needs review"), nameEvidence)
                         .primitives(way)
                         .fix(() -> createSetNameReviewedCommand(way))
                         .build());
@@ -228,7 +232,7 @@ public class TIGERReviewTest extends Test {
                 // Alignment only - name needs verification, offer fix to set tiger:reviewed=alignment
                 String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
                 errors.add(TestError.builder(this, Severity.WARNING, TIGER_NAME_NOT_CORROBORATED)
-                        .message(tr("TIGERReview - Alignment verified ({0}), name not corroborated", alignmentEvidence))
+                        .message(GROUP_MESSAGE, marktr("Alignment verified ({0}), name not corroborated"), alignmentEvidence)
                         .primitives(way)
                         .fix(() -> createSetAlignmentReviewedCommand(way))
                         .build());
@@ -239,7 +243,7 @@ public class TIGERReviewTest extends Test {
             if (alignmentResult.isVerified()) {
                 String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
                 errors.add(TestError.builder(this, Severity.WARNING, TIGER_UNNAMED_VERIFIED)
-                        .message(tr("TIGERReview - Unnamed road verified ({0}), can remove tiger:reviewed", alignmentEvidence))
+                        .message(GROUP_MESSAGE, marktr("Unnamed road verified ({0}), can remove tiger:reviewed"), alignmentEvidence)
                         .primitives(way)
                         .fix(() -> createRemoveTagCommand(way))
                         .build());
@@ -266,7 +270,7 @@ public class TIGERReviewTest extends Test {
                 : tr("connected road");
 
         errors.add(TestError.builder(this, Severity.WARNING, code)
-                .message(tr("TIGERReview - Surface suggestion: {0} ({1})", surface, evidence))
+                .message(GROUP_MESSAGE, marktr("Surface suggestion: {0} ({1})"), surface, evidence)
                 .primitives(way)
                 .fix(() -> createAddSurfaceCommand(way, surface))
                 .build());
@@ -299,9 +303,42 @@ public class TIGERReviewTest extends Test {
         if (result.getEvidence() == AlignmentEvidence.ALL_NODES_EDITED) {
             return tr("all nodes edited");
         } else if (result.getEvidence() == AlignmentEvidence.HIGH_PERCENTAGE_EDITED) {
-            return tr("{0}% of nodes edited", String.format("%.0f", result.getPercentageEdited() * 100));
+            return tr("{0}% of nodes edited", bucketPercentage(result.getPercentageEdited()));
         } else {
-            return tr("avg node version {0}", String.format("%.1f", result.getAvgVersion()));
+            return tr("avg node version {0}", bucketVersion(result.getAvgVersion()));
+        }
+    }
+
+    /**
+     * Bucket a percentage (0.0-1.0) into display tiers: 80%+, 90%+, 95%+.
+     */
+    private static String bucketPercentage(double pct) {
+        double percent = pct * 100;
+        if (percent >= 95) {
+            return "95+";
+        } else if (percent >= 90) {
+            return "90+";
+        } else {
+            return "80+";
+        }
+    }
+
+    /**
+     * Bucket a version into 0.25 steps, capping at 2.5+.
+     */
+    private static String bucketVersion(double version) {
+        if (version >= 2.5) {
+            return "2.5+";
+        }
+        // Round down to nearest 0.25, format without unnecessary trailing zeros
+        int quarters = (int) Math.floor(version * 4);
+        int whole = quarters / 4;
+        int remainder = quarters % 4;
+        switch (remainder) {
+        case 0: return whole + ".0";
+        case 1: return whole + ".25";
+        case 2: return whole + ".5";
+        default: return whole + ".75";
         }
     }
 
@@ -336,7 +373,7 @@ public class TIGERReviewTest extends Test {
         if (alignmentResult.isVerified()) {
             String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
             errors.add(TestError.builder(this, Severity.WARNING, TIGER_NAME_UPGRADE)
-                    .message(tr("TIGERReview - Can be fully verified, alignment now confirmed ({0})", alignmentEvidence))
+                    .message(GROUP_MESSAGE, marktr("Can be fully verified, alignment now confirmed ({0})"), alignmentEvidence)
                     .primitives(way)
                     .fix(() -> createRemoveTagCommand(way))
                     .build());
