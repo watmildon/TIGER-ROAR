@@ -46,6 +46,10 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
+import org.openstreetmap.josm.plugins.tigerreview.external.NadDataCache;
+import org.openstreetmap.josm.plugins.tigerreview.external.NadDataLoader;
+import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.spi.preferences.PreferenceChangeEvent;
 import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Shortcut;
 
@@ -93,22 +97,21 @@ public class TIGERReviewDialog extends ToggleDialog
         tree.setCellRenderer(new ReviewResultTreeRenderer());
         ToolTipManager.sharedInstance().registerComponent(tree);
 
-        // Selection: click leaf -> select way on map
+        // Selection: sync all selected tree items to map selection
         tree.addTreeSelectionListener(e -> {
             if (updatingSelection) return;
-            TreePath path = e.getPath();
-            if (path == null) return;
-            Object userObj = ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject();
-            if (userObj instanceof ReviewResult result) {
-                updatingSelection = true;
-                try {
-                    DataSet ds = getDataSet();
-                    if (ds != null) {
-                        ds.setSelected(Collections.singleton(result.getWay()));
-                    }
-                } finally {
-                    updatingSelection = false;
-                }
+            updatingSelection = true;
+            try {
+                DataSet ds = getDataSet();
+                if (ds == null) return;
+                List<ReviewResult> selected = getSelectedResults();
+                if (selected.isEmpty()) return;
+                Set<Way> ways = selected.stream()
+                        .map(ReviewResult::getWay)
+                        .collect(Collectors.toSet());
+                ds.setSelected(ways);
+            } finally {
+                updatingSelection = false;
             }
         });
 
@@ -187,6 +190,11 @@ public class TIGERReviewDialog extends ToggleDialog
         currentWorker = new SwingWorker<List<ReviewResult>, Void>() {
             @Override
             protected List<ReviewResult> doInBackground() {
+                // Load NAD data synchronously before analysis if needed
+                if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false)
+                        && !NadDataCache.getInstance().isReady()) {
+                    NadDataLoader.getInstance().loadForDataSetSync(ds);
+                }
                 return TIGERReviewAnalyzer.analyzeAll(ds);
             }
 
@@ -196,7 +204,7 @@ public class TIGERReviewDialog extends ToggleDialog
                     if (!isCancelled()) {
                         currentResults = get();
                         rebuildTree();
-                        setTitle(tr("TIGER Review: {0} results", currentResults.size()));
+                        setTitle(buildTitle(currentResults.size()));
                     }
                 } catch (Exception ex) {
                     clearResults();
@@ -309,6 +317,24 @@ public class TIGERReviewDialog extends ToggleDialog
         fixAllAction.setEnabled(hasResults);
     }
 
+    /**
+     * Build the title bar text, including NAD cache status if NAD check is enabled.
+     */
+    private String buildTitle(int resultCount) {
+        String title = tr("TIGER Review: {0} results", resultCount);
+        if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false)) {
+            NadDataCache cache = NadDataCache.getInstance();
+            if (cache.isReady()) {
+                title += " (NAD: " + cache.getAddressCount() + " addresses)";
+            } else if (cache.getErrorMessage() != null) {
+                title += " (NAD: error)";
+            } else {
+                title += " (NAD: not loaded)";
+            }
+        }
+        return title;
+    }
+
     // --- Listener lifecycle ---
 
     @Override
@@ -347,6 +373,14 @@ public class TIGERReviewDialog extends ToggleDialog
     @Override
     public void cleaned(UndoRedoHandler.CommandQueueCleanedEvent e) {
         if (!currentResults.isEmpty()) {
+            analyze();
+        }
+    }
+
+    @Override
+    public void preferenceChanged(PreferenceChangeEvent e) {
+        super.preferenceChanged(e);
+        if (e.getKey().startsWith("tigerreview.") && !currentResults.isEmpty()) {
             analyze();
         }
     }

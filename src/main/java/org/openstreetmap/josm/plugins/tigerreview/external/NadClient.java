@@ -3,12 +3,6 @@ package org.openstreetmap.josm.plugins.tigerreview.external;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -16,10 +10,15 @@ import java.util.regex.Pattern;
 
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.LatLon;
+import org.openstreetmap.josm.tools.HttpClient;
+import org.openstreetmap.josm.tools.HttpClient.Response;
 import org.openstreetmap.josm.tools.Logging;
 
 /**
  * Client for querying the National Address Database (NAD) via ESRI ArcGIS REST API.
+ *
+ * Uses JOSM's HttpClient and the GeoJSON response format, matching the query style
+ * used by MapWithAI and the Rapid editor against this ESRI Feature Server.
  *
  * Endpoint: https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0
  */
@@ -31,22 +30,14 @@ public class NadClient {
     /** Maximum features per request (ESRI limit is 2000) */
     private static final int MAX_FEATURES_PER_REQUEST = 2000;
 
-    /** Connection timeout */
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    /** Connection timeout in milliseconds */
+    private static final int CONNECT_TIMEOUT_MS = 10_000;
 
-    /** Request timeout */
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    /** Read timeout in milliseconds */
+    private static final int READ_TIMEOUT_MS = 30_000;
 
     /** Maximum area in square degrees before skipping fetch */
     private static final double MAX_AREA_DEGREES = 0.25; // ~roughly 25km x 25km at mid-latitudes
-
-    private final HttpClient httpClient;
-
-    public NadClient() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(CONNECT_TIMEOUT)
-                .build();
-    }
 
     /**
      * Represents an address from the NAD.
@@ -130,104 +121,142 @@ public class NadClient {
     /**
      * Query a single page of results.
      */
-    private NadQueryResult queryPage(Bounds bounds, int offset) throws IOException, InterruptedException {
+    private NadQueryResult queryPage(Bounds bounds, int offset) throws IOException {
         String url = buildQueryUrl(bounds, offset);
         Logging.info("NAD query: " + url);
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(REQUEST_TIMEOUT)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
+        Response response = HttpClient.create(URI.create(url).toURL())
+                .setAccept("application/geo+json, application/json")
+                .setConnectTimeout(CONNECT_TIMEOUT_MS)
+                .setReadTimeout(READ_TIMEOUT_MS)
+                .connect();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        try {
+            int responseCode = response.getResponseCode();
+            String body = response.fetchContent();
 
-        if (response.statusCode() != 200) {
-            return NadQueryResult.error("NAD API returned HTTP " + response.statusCode());
+            if (responseCode != 200) {
+                return NadQueryResult.error("NAD API returned HTTP " + responseCode);
+            }
+
+            // Check for API error (ESRI returns 200 with error in body)
+            if (body.contains("\"error\"")) {
+                String errorMsg = extractJsonString(body, "message");
+                String details = extractJsonString(body, "details");
+                String fullMsg = "NAD API error";
+                if (errorMsg != null && !errorMsg.isEmpty()) {
+                    fullMsg += ": " + errorMsg;
+                }
+                if (details != null && !details.isEmpty()) {
+                    fullMsg += " (" + details + ")";
+                }
+                return NadQueryResult.error(fullMsg);
+            }
+
+            // Parse GeoJSON features
+            List<NadAddress> addresses = parseGeoJsonFeatures(body);
+
+            // Check if there are more results (GeoJSON wraps this in properties)
+            boolean exceededLimit = body.contains("\"exceededTransferLimit\":true")
+                    || body.contains("\"exceededTransferLimit\": true");
+
+            return NadQueryResult.success(addresses, exceededLimit);
+        } finally {
+            response.disconnect();
         }
-
-        String body = response.body();
-
-        // Check for API error
-        if (body.contains("\"error\"")) {
-            String errorMsg = extractJsonString(body, "message");
-            return NadQueryResult.error("NAD API error: " + (errorMsg != null ? errorMsg : "Unknown error"));
-        }
-
-        // Parse features
-        List<NadAddress> addresses = parseFeatures(body);
-
-        // Check if there are more results
-        boolean hasMore = body.contains("\"exceededTransferLimit\":true") ||
-                body.contains("\"exceededTransferLimit\": true");
-
-        return NadQueryResult.success(addresses, hasMore);
     }
 
     /**
      * Build the query URL for the NAD endpoint.
+     *
+     * Uses the minimal parameter set that works with this ESRI Feature Server,
+     * matching the format used by the Rapid editor and MapWithAI plugin.
      */
     private String buildQueryUrl(Bounds bounds, int offset) {
-        // ESRI uses xmin,ymin,xmax,ymax format (lon,lat,lon,lat)
+        // ESRI envelope format: xmin,ymin,xmax,ymax (lon,lat,lon,lat)
         String geometry = String.format("%f,%f,%f,%f",
                 bounds.getMinLon(), bounds.getMinLat(),
                 bounds.getMaxLon(), bounds.getMaxLat());
 
-        StringBuilder sb = new StringBuilder(NAD_BASE_URL);
-        sb.append("?where=1%3D1"); // where=1=1 (match all)
-        sb.append("&geometry=").append(URLEncoder.encode(geometry, StandardCharsets.UTF_8));
-        sb.append("&geometryType=esriGeometryEnvelope");
-        sb.append("&inSR=4326"); // WGS84
-        sb.append("&spatialRel=esriSpatialRelIntersects");
-        sb.append("&outFields=").append(URLEncoder.encode("addr_street,addr_housenumber,addr_city,addr_state,addr_postcode", StandardCharsets.UTF_8));
-        sb.append("&returnGeometry=true");
-        sb.append("&outSR=4326");
-        sb.append("&f=json");
-        sb.append("&resultOffset=").append(offset);
-        sb.append("&resultRecordCount=").append(MAX_FEATURES_PER_REQUEST);
-
-        return sb.toString();
+        return NAD_BASE_URL
+                + "?f=geojson"
+                + "&geometry=" + geometry
+                + "&geometryType=esriGeometryEnvelope"
+                + "&outfields=addr_street,addr_housenumber,addr_city,addr_state,addr_postcode"
+                + "&outSR=4326"
+                + "&resultOffset=" + offset
+                + "&resultRecordCount=" + MAX_FEATURES_PER_REQUEST;
     }
 
     /**
-     * Parse features from the JSON response using simple string parsing.
-     * This avoids external JSON library dependencies.
+     * Parse features from a GeoJSON response.
+     *
+     * ESRI returns geometry before properties:
+     * {"type":"Feature","geometry":{"type":"Point","coordinates":[-90.013,35.025]},
+     *  "properties":{"addr_street":"Rodney Road","addr_housenumber":"4538",...}}
+     *
+     * We extract coordinates and properties separately from each feature to
+     * handle either ordering.
      */
-    private List<NadAddress> parseFeatures(String json) {
+    private List<NadAddress> parseGeoJsonFeatures(String json) {
         List<NadAddress> addresses = new ArrayList<>();
 
-        // Find the features array
         int featuresStart = json.indexOf("\"features\":");
         if (featuresStart == -1) {
             return addresses;
         }
 
-        // Find each feature object
-        Pattern featurePattern = Pattern.compile(
-                "\\{\\s*\"attributes\"\\s*:\\s*\\{([^}]*)\\}\\s*,\\s*\"geometry\"\\s*:\\s*\\{([^}]*)\\}\\s*\\}");
-        Matcher matcher = featurePattern.matcher(json);
+        // Extract coordinates and properties from each feature independently
+        Pattern coordPattern = Pattern.compile(
+                "\"coordinates\"\\s*:\\s*\\[\\s*(-?[0-9.]+)\\s*,\\s*(-?[0-9.]+)\\s*\\]");
+        Pattern propsPattern = Pattern.compile(
+                "\"properties\"\\s*:\\s*\\{([^}]*)\\}");
 
-        while (matcher.find()) {
-            String attributes = matcher.group(1);
-            String geometry = matcher.group(2);
+        // Split on feature boundaries to process each feature separately
+        String featuresJson = json.substring(featuresStart);
+        int searchFrom = 0;
+        while (true) {
+            int featureStart = featuresJson.indexOf("\"type\"", searchFrom);
+            if (featureStart == -1) break;
+            int featureTypeEnd = featuresJson.indexOf("\"Feature\"", featureStart);
+            if (featureTypeEnd == -1) break;
 
-            String street = extractJsonString(attributes, "addr_street");
+            // Find the end of this feature (next Feature or end of array)
+            int nextFeature = featuresJson.indexOf("\"type\"", featureTypeEnd + 9);
+            String featureBlock = nextFeature == -1
+                    ? featuresJson.substring(featureStart)
+                    : featuresJson.substring(featureStart, nextFeature);
+            searchFrom = featureTypeEnd + 9;
+
+            Matcher coordMatcher = coordPattern.matcher(featureBlock);
+            Matcher propsMatcher = propsPattern.matcher(featureBlock);
+
+            if (!coordMatcher.find() || !propsMatcher.find()) {
+                continue;
+            }
+
+            String lonStr = coordMatcher.group(1);
+            String latStr = coordMatcher.group(2);
+            String properties = propsMatcher.group(1);
+
+            String street = extractJsonString(properties, "addr_street");
             if (street == null || street.isEmpty()) {
                 continue;
             }
 
-            String houseNumber = extractJsonString(attributes, "addr_housenumber");
-            String city = extractJsonString(attributes, "addr_city");
-            String state = extractJsonString(attributes, "addr_state");
-            String postcode = extractJsonString(attributes, "addr_postcode");
-
-            Double x = extractJsonNumber(geometry, "x");
-            Double y = extractJsonNumber(geometry, "y");
-
-            if (x == null || y == null) {
+            double lon;
+            double lat;
+            try {
+                lon = Double.parseDouble(lonStr);
+                lat = Double.parseDouble(latStr);
+            } catch (NumberFormatException e) {
                 continue;
             }
+
+            String houseNumber = extractJsonString(properties, "addr_housenumber");
+            String city = extractJsonString(properties, "addr_city");
+            String state = extractJsonString(properties, "addr_state");
+            String postcode = extractJsonString(properties, "addr_postcode");
 
             addresses.add(new NadAddress(
                     street,
@@ -235,7 +264,7 @@ public class NadClient {
                     city,
                     state,
                     postcode,
-                    new LatLon(y, x) // lat, lon
+                    new LatLon(lat, lon)
             ));
         }
 
@@ -250,22 +279,6 @@ public class NadClient {
         Matcher matcher = pattern.matcher(json);
         if (matcher.find()) {
             return matcher.group(1);
-        }
-        return null;
-    }
-
-    /**
-     * Extract a numeric value from JSON-like text.
-     */
-    private Double extractJsonNumber(String json, String key) {
-        Pattern pattern = Pattern.compile("\"" + key + "\"\\s*:\\s*(-?[0-9.]+)");
-        Matcher matcher = pattern.matcher(json);
-        if (matcher.find()) {
-            try {
-                return Double.parseDouble(matcher.group(1));
-            } catch (NumberFormatException e) {
-                return null;
-            }
         }
         return null;
     }
