@@ -148,7 +148,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         // Strip all tiger: tags
         gbc.gridy = row++;
         stripTigerTagsCheckBox = new JCheckBox(tr("Strip all tiger:* tags when fully verified (not just tiger:reviewed)"));
-        stripTigerTagsCheckBox.setSelected(Config.getPref().getBoolean(PREF_STRIP_TIGER_TAGS, false));
+        stripTigerTagsCheckBox.setSelected(Config.getPref().getBoolean(PREF_STRIP_TIGER_TAGS, true));
         panel.add(stripTigerTagsCheckBox, gbc);
 
         // === Parameters Section ===
