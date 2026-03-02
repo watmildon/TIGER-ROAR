@@ -29,6 +29,9 @@ public class SurfaceTest extends Test {
     /** Surface inferred from connected road at one end (lower confidence) */
     public static final int SURFACE_SUGGESTED_ONE_END = CODE_PREFIX + 2;
 
+    /** Connected roads at endpoints have conflicting surfaces (needs human review) */
+    public static final int SURFACE_CONFLICT = CODE_PREFIX + 3;
+
     /** Group message for all surface warnings in the validator tree */
     private static final String GROUP_MESSAGE = tr("Surface Suggestion");
 
@@ -62,26 +65,27 @@ public class SurfaceTest extends Test {
         }
 
         SurfaceResult result = surfaceCheck.checkSurface(way);
-        if (result.hasSuggestion()) {
-            errors.add(toTestError(way, result));
+        if (result.isConflicting()) {
+            errors.add(TestError.builder(this, Severity.OTHER, SURFACE_CONFLICT)
+                    .message(GROUP_MESSAGE, marktr("conflicting surfaces at endpoints"))
+                    .primitives(way)
+                    .build());
+        } else if (result.hasSuggestion()) {
+            String surface = result.getSuggestedSurface();
+            int code = result.isBothEnds()
+                    ? SURFACE_SUGGESTED_BOTH_ENDS
+                    : SURFACE_SUGGESTED_ONE_END;
+            String evidence = result.isBothEnds()
+                    ? tr("connected roads at both ends")
+                    : tr("connected road");
+
+            errors.add(TestError.builder(this, Severity.WARNING, code)
+                    .message(GROUP_MESSAGE,
+                            marktr("{0} ({1})"), surface, evidence)
+                    .primitives(way)
+                    .fix(() -> new ChangePropertyCommand(way, "surface", surface))
+                    .build());
         }
-    }
-
-    private TestError toTestError(Way way, SurfaceResult result) {
-        String surface = result.getSuggestedSurface();
-        int code = result.isBothEnds()
-                ? SURFACE_SUGGESTED_BOTH_ENDS
-                : SURFACE_SUGGESTED_ONE_END;
-        String evidence = result.isBothEnds()
-                ? tr("connected roads at both ends")
-                : tr("connected road");
-
-        return TestError.builder(this, Severity.WARNING, code)
-                .message(GROUP_MESSAGE,
-                        marktr("{0} ({1})"), surface, evidence)
-                .primitives(way)
-                .fix(() -> new ChangePropertyCommand(way, "surface", surface))
-                .build();
     }
 
     @Override

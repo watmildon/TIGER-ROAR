@@ -360,8 +360,9 @@ public class TIGERReviewDialog extends ToggleDialog
         if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) return 5;
         if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS) return 6;
         if (code == SurfaceTest.SURFACE_SUGGESTED_ONE_END) return 7;
-        if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 8;
-        return 9;
+        if (code == SurfaceTest.SURFACE_CONFLICT) return 8;
+        if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 9;
+        return 10;
     }
 
     // --- Fix actions ---

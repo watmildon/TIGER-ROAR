@@ -24,10 +24,20 @@ public class SurfaceCheck {
     public static class SurfaceResult {
         private final String suggestedSurface;
         private final boolean bothEnds;
+        private final boolean conflicting;
 
         public SurfaceResult(String suggestedSurface, boolean bothEnds) {
+            this(suggestedSurface, bothEnds, false);
+        }
+
+        private SurfaceResult(String suggestedSurface, boolean bothEnds, boolean conflicting) {
             this.suggestedSurface = suggestedSurface;
             this.bothEnds = bothEnds;
+            this.conflicting = conflicting;
+        }
+
+        static SurfaceResult conflict() {
+            return new SurfaceResult(null, false, true);
         }
 
         /**
@@ -45,10 +55,32 @@ public class SurfaceCheck {
         }
 
         /**
+         * @return true if connected roads have conflicting surfaces (no auto-fix)
+         */
+        public boolean isConflicting() {
+            return conflicting;
+        }
+
+        /**
          * @return true if a surface suggestion was found
          */
         public boolean hasSuggestion() {
             return suggestedSurface != null;
+        }
+    }
+
+    /**
+     * Surface info gathered at a single endpoint node.
+     */
+    private static class NodeSurfaceInfo {
+        /** Consistent surface value, or null if none or conflicting */
+        final String surface;
+        /** True if connected roads at this node have conflicting surfaces */
+        final boolean hasConflict;
+
+        NodeSurfaceInfo(String surface, boolean hasConflict) {
+            this.surface = surface;
+            this.hasConflict = hasConflict;
         }
     }
 
@@ -72,30 +104,45 @@ public class SurfaceCheck {
         Node firstNode = nodes.get(0);
         Node lastNode = nodes.get(nodes.size() - 1);
 
-        String surfaceAtFirst = getSurfaceFromConnections(firstNode, way);
-        String surfaceAtLast = getSurfaceFromConnections(lastNode, way);
+        NodeSurfaceInfo infoAtFirst = getSurfaceFromConnections(firstNode, way);
+        NodeSurfaceInfo infoAtLast = getSurfaceFromConnections(lastNode, way);
 
         // Best case: both ends have matching surfaces
-        if (surfaceAtFirst != null && surfaceAtFirst.equals(surfaceAtLast)) {
-            return new SurfaceResult(surfaceAtFirst, true);
+        if (infoAtFirst.surface != null && infoAtFirst.surface.equals(infoAtLast.surface)) {
+            return new SurfaceResult(infoAtFirst.surface, true);
         }
 
-        // One end has a surface - still useful but less confident
-        if (surfaceAtFirst != null) {
-            return new SurfaceResult(surfaceAtFirst, false);
-        }
-        if (surfaceAtLast != null) {
-            return new SurfaceResult(surfaceAtLast, false);
+        // Conflict: both ends have a surface but they disagree
+        if (infoAtFirst.surface != null && infoAtLast.surface != null) {
+            return SurfaceResult.conflict();
         }
 
+        // Conflict: one end has a surface, the other has a node-level conflict
+        if (infoAtFirst.surface != null && infoAtLast.hasConflict) {
+            return SurfaceResult.conflict();
+        }
+        if (infoAtLast.surface != null && infoAtFirst.hasConflict) {
+            return SurfaceResult.conflict();
+        }
+
+        // One end has a surface, the other has no info — suggest with lower confidence
+        if (infoAtFirst.surface != null) {
+            return new SurfaceResult(infoAtFirst.surface, false);
+        }
+        if (infoAtLast.surface != null) {
+            return new SurfaceResult(infoAtLast.surface, false);
+        }
+
+        // Both ends have no info (conflicts at both ends with no clear surface, or just nothing)
         return new SurfaceResult(null, false);
     }
 
     /**
      * Get the surface from connected roads at a node.
-     * Returns null if no surface found or if connected roads have conflicting surfaces.
+     * Returns a {@link NodeSurfaceInfo} distinguishing "no surface found" from
+     * "conflicting surfaces found".
      */
-    private String getSurfaceFromConnections(Node node, Way excludeWay) {
+    private NodeSurfaceInfo getSurfaceFromConnections(Node node, Way excludeWay) {
         String foundSurface = null;
 
         for (OsmPrimitive referrer : node.getReferrers()) {
@@ -105,14 +152,14 @@ public class SurfaceCheck {
                     if (foundSurface == null) {
                         foundSurface = surface;
                     } else if (!foundSurface.equals(surface)) {
-                        // Conflicting surfaces at this node - can't suggest
-                        return null;
+                        // Conflicting surfaces at this node
+                        return new NodeSurfaceInfo(null, true);
                     }
                 }
             }
         }
 
-        return foundSurface;
+        return new NodeSurfaceInfo(foundSurface, false);
     }
 
     /**

@@ -64,6 +64,9 @@ public final class SurfaceAnalyzer {
 
         @Override
         public Supplier<Command> getFixSupplier() {
+            if (surfaceValue == null) {
+                return null;
+            }
             return () -> new ChangePropertyCommand(way, "surface", surfaceValue);
         }
     }
@@ -93,17 +96,25 @@ public final class SurfaceAnalyzer {
             }
 
             SurfaceResult surfaceResult = surfaceCheck.checkSurface(way);
-            if (surfaceResult.hasSuggestion()) {
+            if (surfaceResult.isConflicting()) {
+                results.add(new SurfaceSuggestion(way, SurfaceTest.SURFACE_CONFLICT,
+                        tr("Conflicting surfaces at endpoints"),
+                        tr("Conflicting surfaces (review needed)"),
+                        null));
+            } else if (surfaceResult.hasSuggestion()) {
                 String surface = surfaceResult.getSuggestedSurface();
-                int code = surfaceResult.isBothEnds()
-                        ? SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS
-                        : SurfaceTest.SURFACE_SUGGESTED_ONE_END;
-                String evidence = surfaceResult.isBothEnds()
-                        ? tr("connected roads at both ends")
-                        : tr("connected road");
+                int code;
+                String groupMessage;
+                if (surfaceResult.isBothEnds()) {
+                    code = SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS;
+                    groupMessage = tr("Connected roads at both ends");
+                } else {
+                    code = SurfaceTest.SURFACE_SUGGESTED_ONE_END;
+                    groupMessage = tr("Connected road at one end");
+                }
                 results.add(new SurfaceSuggestion(way, code,
-                        tr("Surface suggestion: {0} ({1})", surface, evidence),
-                        tr("Surface suggestion"),
+                        tr("Suggest surface={0}", surface),
+                        groupMessage,
                         surface));
             }
         }
