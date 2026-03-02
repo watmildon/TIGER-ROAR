@@ -210,8 +210,11 @@ public class NodeVersionCheck {
             return new AlignmentResult(AlignmentEvidence.HIGH_PERCENTAGE_EDITED, stats.avgVersion, stats.percentageEdited);
         }
 
-        // Check average node version
-        if (stats.avgVersion > minAvgVersion) {
+        // Average version fallback: only use when no user info is available.
+        // When we have usernames, the percentage-edited check above is more
+        // accurate — a high avg version caused by bot edits (e.g. woodpeck_fixbot
+        // bumping nodes to v2) should not count as alignment verification.
+        if (!stats.hasUserInfo && stats.avgVersion > minAvgVersion) {
             return new AlignmentResult(AlignmentEvidence.AVG_VERSION_HIGH, stats.avgVersion, stats.percentageEdited);
         }
 
@@ -243,15 +246,21 @@ public class NodeVersionCheck {
      *
      * <p>A node is considered "edited" based on who last modified it,
      * not just its version number. See {@link #isNodeEdited(Node)}.</p>
+     *
+     * <p>The {@code hasUserInfo} flag tracks whether any node had user
+     * information available. When user info is present, the average version
+     * fallback heuristic should not be used because the username-based
+     * edited/not-edited classification is more accurate.</p>
      */
     private NodeStats calculateNodeStats(Way way) {
         if (way.getNodesCount() == 0) {
-            return new NodeStats(0, 0, false, 0);
+            return new NodeStats(0, 0, false, 0, false);
         }
 
         double sumVersions = 0;
         int nodeCount = 0;
         int editedCount = 0;
+        boolean hasUserInfo = false;
 
         for (Node node : way.getNodes()) {
             // Use __TEST_VERSION tag if present, otherwise use actual version
@@ -261,6 +270,10 @@ public class NodeVersionCheck {
             if (version > 0) {
                 sumVersions += version;
                 nodeCount++;
+                // Track if we have user info for any node
+                if (getEffectiveUsername(node) != null) {
+                    hasUserInfo = true;
+                }
                 // Check if node was edited by a human (not a bot/importer)
                 if (isNodeEdited(node)) {
                     editedCount++;
@@ -269,13 +282,13 @@ public class NodeVersionCheck {
         }
 
         if (nodeCount == 0) {
-            return new NodeStats(0, 0, false, 0);
+            return new NodeStats(0, 0, false, 0, false);
         }
 
         double percentageEdited = (double) editedCount / nodeCount;
         boolean allNodesEdited = (editedCount == nodeCount);
 
-        return new NodeStats(sumVersions / nodeCount, nodeCount, allNodesEdited, percentageEdited);
+        return new NodeStats(sumVersions / nodeCount, nodeCount, allNodesEdited, percentageEdited, hasUserInfo);
     }
 
     /**
@@ -365,12 +378,16 @@ public class NodeVersionCheck {
         final int nodeCount;
         final boolean allNodesEdited;
         final double percentageEdited;
+        /** Whether any node had user info available */
+        final boolean hasUserInfo;
 
-        NodeStats(double avgVersion, int nodeCount, boolean allNodesEdited, double percentageEdited) {
+        NodeStats(double avgVersion, int nodeCount, boolean allNodesEdited,
+                double percentageEdited, boolean hasUserInfo) {
             this.avgVersion = avgVersion;
             this.nodeCount = nodeCount;
             this.allNodesEdited = allNodesEdited;
             this.percentageEdited = percentageEdited;
+            this.hasUserInfo = hasUserInfo;
         }
     }
 }

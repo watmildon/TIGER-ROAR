@@ -80,9 +80,9 @@ public class TIGERReviewTest extends Test {
     public static final int TIGER_REVIEWED_INVALID_VALUE = CODE_PREFIX + 15;
 
     /** Accepted values for tiger:reviewed (no error triggered).
-     *  "yes" and "position" are legacy but not flagged as errors. */
+     *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
-            new HashSet<>(Arrays.asList("no", "aerial", "name", "yes", "position")));
+            new HashSet<>(Arrays.asList("no", "aerial", "name", "yes", "position", "alignment")));
 
     /** Highway types we care about for TIGER review (based on TagInfo combinations) */
     public static final Set<String> CLASSIFIED_HIGHWAYS = Collections.unmodifiableSet(

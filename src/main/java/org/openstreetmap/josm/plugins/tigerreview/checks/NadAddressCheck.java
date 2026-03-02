@@ -51,4 +51,28 @@ public class NadAddressCheck {
 
         return cache.isNameCorroborated(way, name, maxDistanceMeters);
     }
+
+    /**
+     * Find the NAD street name that matches the given road name (exact or fuzzy).
+     *
+     * <p>Returns the matching NAD street name if found. For exact matches,
+     * returns the OSM name. For fuzzy matches (small Levenshtein distance),
+     * returns the differing NAD name so the caller can surface the discrepancy.</p>
+     *
+     * @param way  The way to check
+     * @param name The name to look for in NAD addr:street values
+     * @return The matching NAD street name, or null if no match
+     */
+    public String findMatchingName(Way way, String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+
+        NadDataCache cache = NadDataCache.getInstance();
+        if (!cache.isReady()) {
+            return null;
+        }
+
+        return cache.findMatchingName(way, name, maxDistanceMeters);
+    }
 }

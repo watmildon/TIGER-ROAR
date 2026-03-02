@@ -96,7 +96,7 @@ public final class TIGERReviewAnalyzer {
             case SET_NAME_REVIEWED:
                 return () -> new ChangePropertyCommand(way, TIGER_REVIEWED, "name");
             case SET_ALIGNMENT_REVIEWED:
-                return () -> new ChangePropertyCommand(way, TIGER_REVIEWED, "alignment");
+                return () -> new ChangePropertyCommand(way, TIGER_REVIEWED, "aerial");
             case ADD_SURFACE:
                 return () -> new ChangePropertyCommand(way, "surface", surfaceValue);
             default:
@@ -178,6 +178,11 @@ public final class TIGERReviewAnalyzer {
                         nadCheckEnabled, stripTigerTags);
             } else if ("name".equals(tigerReviewed)) {
                 analyzeNameReviewedRoad(way, results, nodeVersionCheck, stripTigerTags);
+            } else if (isAlignmentReviewedValue(tigerReviewed)) {
+                analyzeAlignmentReviewedRoad(way, results,
+                        connectedRoadCheck, addressCheck, nadAddressCheck,
+                        connectedRoadCheckEnabled, addressCheckEnabled,
+                        nadCheckEnabled, stripTigerTags);
             } else if (tigerReviewed != null
                     && !TIGERReviewTest.VALID_REVIEWED_VALUES.contains(tigerReviewed)) {
                 analyzeInvalidReviewedValue(way, tigerReviewed, results);
@@ -217,6 +222,11 @@ public final class TIGERReviewAnalyzer {
                     nadCheckEnabled, stripTigerTags);
         } else if ("name".equals(tigerReviewed)) {
             analyzeNameReviewedRoad(way, results, nodeVersionCheck, stripTigerTags);
+        } else if (isAlignmentReviewedValue(tigerReviewed)) {
+            analyzeAlignmentReviewedRoad(way, results,
+                    connectedRoadCheck, addressCheck, nadAddressCheck,
+                    connectedRoadCheckEnabled, addressCheckEnabled,
+                    nadCheckEnabled, stripTigerTags);
         } else if (tigerReviewed != null
                 && !TIGERReviewTest.VALID_REVIEWED_VALUES.contains(tigerReviewed)) {
             analyzeInvalidReviewedValue(way, tigerReviewed, results);
@@ -247,6 +257,7 @@ public final class TIGERReviewAnalyzer {
         ConnectionType connectionType = ConnectionType.NONE;
         boolean addressMatch = false;
         boolean nadMatch = false;
+        String nadMatchedName = null; // NAD street name (differs from OSM name for fuzzy matches)
         if (hasName) {
             if (connectedRoadCheckEnabled) {
                 connectionType = connectedRoadCheck.checkConnection(way, name);
@@ -255,7 +266,8 @@ public final class TIGERReviewAnalyzer {
                 addressMatch = addressCheck.isNameCorroborated(way, name);
             }
             if (connectionType == ConnectionType.NONE && !addressMatch && nadCheckEnabled) {
-                nadMatch = nadAddressCheck.isNameCorroborated(way, name);
+                nadMatchedName = nadAddressCheck.findMatchingName(way, name);
+                nadMatch = nadMatchedName != null;
             }
         }
 
@@ -273,13 +285,15 @@ public final class TIGERReviewAnalyzer {
         // Apply decision matrix
         if (hasName) {
             if (nameCorroborated && alignmentResult.isVerified()) {
-                String message = buildFullyVerifiedMessage(connectionType, addressMatch, nadMatch, alignmentResult);
+                String message = buildFullyVerifiedMessage(connectionType, addressMatch, nadMatch,
+                        nadMatchedName, name, alignmentResult);
                 int code = getNameVerificationCode(connectionType, addressMatch, nadMatch);
                 results.add(new ReviewResult(way, code, message,
                         tr("Fully verified"),
                         FixAction.REMOVE_TAG, null, stripTigerTags));
             } else if (nameCorroborated) {
-                String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch);
+                String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch,
+                        nadMatchedName, name);
                 int code = getNameVerificationCode(connectionType, addressMatch, nadMatch);
                 results.add(new ReviewResult(way, code, nameEvidence,
                         tr("Name verified, alignment needs review"),
@@ -330,6 +344,71 @@ public final class TIGERReviewAnalyzer {
     }
 
     /**
+     * Check if a tiger:reviewed value indicates alignment/position has been reviewed
+     * but name still needs verification (aerial, position, alignment).
+     */
+    private static boolean isAlignmentReviewedValue(String tigerReviewed) {
+        return "aerial".equals(tigerReviewed)
+                || "position".equals(tigerReviewed)
+                || "alignment".equals(tigerReviewed);
+    }
+
+    /**
+     * Analyze a way where alignment has been reviewed (tiger:reviewed=aerial/position/alignment)
+     * but name may still need corroboration. If name evidence is found, the way can be
+     * fully verified and the tag removed.
+     */
+    private static void analyzeAlignmentReviewedRoad(Way way, List<ReviewResult> results,
+            ConnectedRoadCheck connectedRoadCheck,
+            AddressCheck addressCheck,
+            NadAddressCheck nadAddressCheck,
+            boolean connectedRoadCheckEnabled,
+            boolean addressCheckEnabled,
+            boolean nadCheckEnabled,
+            boolean stripTigerTags) {
+
+        String name = way.get("name");
+        if (name == null || name.isEmpty()) {
+            // Unnamed road with alignment verified — can remove tag
+            results.add(new ReviewResult(way, TIGERReviewTest.TIGER_UNNAMED_VERIFIED,
+                    tr("alignment previously reviewed"),
+                    tr("Unnamed road verified"),
+                    FixAction.REMOVE_TAG, null, stripTigerTags));
+            return;
+        }
+
+        // Look for name corroboration
+        ConnectionType connectionType = ConnectionType.NONE;
+        boolean addressMatch = false;
+        boolean nadMatch = false;
+        String nadMatchedName = null;
+
+        if (connectedRoadCheckEnabled) {
+            connectionType = connectedRoadCheck.checkConnection(way, name);
+        }
+        if (connectionType == ConnectionType.NONE && addressCheckEnabled) {
+            addressMatch = addressCheck.isNameCorroborated(way, name);
+        }
+        if (connectionType == ConnectionType.NONE && !addressMatch && nadCheckEnabled) {
+            nadMatchedName = nadAddressCheck.findMatchingName(way, name);
+            nadMatch = nadMatchedName != null;
+        }
+
+        boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch || nadMatch;
+
+        if (nameCorroborated) {
+            // Name now corroborated + alignment already reviewed = fully verified
+            String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch,
+                    nadMatchedName, name);
+            int code = getNameVerificationCode(connectionType, addressMatch, nadMatch);
+            results.add(new ReviewResult(way, code, nameEvidence,
+                    tr("Fully verified"),
+                    FixAction.REMOVE_TAG, null, stripTigerTags));
+        }
+        // If name is not corroborated, no action — alignment is already recorded
+    }
+
+    /**
      * Flag a way with an invalid/unrecognized tiger:reviewed value.
      * No automatic fix — user must decide the correct value.
      */
@@ -365,7 +444,8 @@ public final class TIGERReviewAnalyzer {
 
     // --- Message building utilities ---
 
-    static String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch, boolean nadMatch) {
+    static String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch, boolean nadMatch,
+            String nadMatchedName, String osmName) {
         if (connectionType == ConnectionType.BOTH_ENDS) {
             return tr("connected roads at both ends");
         } else if (connectionType == ConnectionType.ONE_END) {
@@ -373,6 +453,9 @@ public final class TIGERReviewAnalyzer {
         } else if (addressMatch) {
             return tr("nearby addr:street");
         } else if (nadMatch) {
+            if (nadMatchedName != null && !nadMatchedName.equalsIgnoreCase(osmName)) {
+                return tr("NAD address data [NAD: {0}]", nadMatchedName);
+            }
             return tr("NAD address data");
         }
         return "";
@@ -389,8 +472,9 @@ public final class TIGERReviewAnalyzer {
     }
 
     static String buildFullyVerifiedMessage(ConnectionType connectionType,
-            boolean addressMatch, boolean nadMatch, AlignmentResult alignmentResult) {
-        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch);
+            boolean addressMatch, boolean nadMatch,
+            String nadMatchedName, String osmName, AlignmentResult alignmentResult) {
+        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, nadMatchedName, osmName);
         String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
         return tr("name: {0}, alignment: {1}", nameEvidence, alignmentEvidence);
     }

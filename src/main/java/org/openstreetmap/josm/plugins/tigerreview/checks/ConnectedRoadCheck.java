@@ -89,6 +89,10 @@ public class ConnectedRoadCheck {
         return false;
     }
 
+    /** tiger:reviewed values that confirm the name has been verified */
+    private static final java.util.Set<String> NAME_VERIFIED_VALUES = java.util.Set.of(
+            "yes", "name");
+
     /**
      * Check if a connected way corroborates the given name.
      *
@@ -103,8 +107,12 @@ public class ConnectedRoadCheck {
             return false;
         }
 
-        // Must NOT have tiger:reviewed=no (unverified roads don't count as corroboration)
-        if ("no".equals(connectedWay.get(TIGER_REVIEWED))) {
+        // Only trust roads where the name is considered verified:
+        // - No tiger:reviewed tag (reviewed or non-TIGER road)
+        // - tiger:reviewed=yes (fully reviewed)
+        // - tiger:reviewed=name (name specifically reviewed)
+        String reviewed = connectedWay.get(TIGER_REVIEWED);
+        if (reviewed != null && !NAME_VERIFIED_VALUES.contains(reviewed)) {
             return false;
         }
 
