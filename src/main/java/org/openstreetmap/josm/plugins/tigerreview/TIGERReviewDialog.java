@@ -17,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import javax.swing.AbstractAction;
@@ -226,18 +227,27 @@ public class TIGERReviewDialog extends ToggleDialog
     }
 
     /**
-     * Rebuild the tree from currentResults, grouped by groupMessage.
+     * Rebuild the tree from currentResults, grouped by groupMessage
+     * and sorted by completeness (fully verified first).
      */
     private void rebuildTree() {
         root.removeAllChildren();
 
-        // Group results by groupMessage, maintaining insertion order
+        // Group results by groupMessage
         Map<String, List<ReviewResult>> grouped = new LinkedHashMap<>();
         for (ReviewResult result : currentResults) {
             grouped.computeIfAbsent(result.getGroupMessage(), k -> new ArrayList<>()).add(result);
         }
 
-        for (Map.Entry<String, List<ReviewResult>> entry : grouped.entrySet()) {
+        // Sort groups by priority (most complete first)
+        List<Map.Entry<String, List<ReviewResult>>> sortedGroups = new ArrayList<>(grouped.entrySet());
+        sortedGroups.sort((a, b) -> {
+            int pa = getGroupPriority(a.getValue().get(0));
+            int pb = getGroupPriority(b.getValue().get(0));
+            return Integer.compare(pa, pb);
+        });
+
+        for (Map.Entry<String, List<ReviewResult>> entry : sortedGroups) {
             DefaultMutableTreeNode categoryNode = new DefaultMutableTreeNode(
                     entry.getKey() + " (" + entry.getValue().size() + ")");
             for (ReviewResult result : entry.getValue()) {
@@ -252,6 +262,34 @@ public class TIGERReviewDialog extends ToggleDialog
         for (int i = 0; i < tree.getRowCount(); i++) {
             tree.expandRow(i);
         }
+    }
+
+    /**
+     * Priority for sorting groups in the tree.
+     * Lower number = higher in the list (most actionable/complete first).
+     */
+    private static int getGroupPriority(ReviewResult result) {
+        int code = result.getCode();
+        // Fully verified (all name verification codes when paired with alignment)
+        if (code == TIGERReviewTest.TIGER_FULLY_VERIFIED
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_BOTH_ENDS
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ONE_END
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD) {
+            // Fully verified and name-only share codes; distinguish by fix action
+            if (result.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+                return 0; // Fully verified
+            }
+            return 3; // Name verified, alignment needs review
+        }
+        if (code == TIGERReviewTest.TIGER_NAME_UPGRADE) return 1;
+        if (code == TIGERReviewTest.TIGER_UNNAMED_VERIFIED) return 2;
+        if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 4;
+        if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) return 5;
+        if (code == TIGERReviewTest.TIGER_SURFACE_SUGGESTED_BOTH_ENDS) return 6;
+        if (code == TIGERReviewTest.TIGER_SURFACE_SUGGESTED_ONE_END) return 7;
+        if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 8;
+        return 9;
     }
 
     /**
@@ -299,9 +337,12 @@ public class TIGERReviewDialog extends ToggleDialog
     private void applyFixes(List<ReviewResult> toFix) {
         List<Command> commands = new ArrayList<>();
         for (ReviewResult result : toFix) {
-            Command cmd = result.getFixSupplier().get();
-            if (cmd != null) {
-                commands.add(cmd);
+            Supplier<Command> supplier = result.getFixSupplier();
+            if (supplier != null) {
+                Command cmd = supplier.get();
+                if (cmd != null) {
+                    commands.add(cmd);
+                }
             }
         }
         if (commands.isEmpty()) return;

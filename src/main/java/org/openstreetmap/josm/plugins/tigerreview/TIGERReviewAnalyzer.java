@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
@@ -86,6 +87,9 @@ public final class TIGERReviewAnalyzer {
         }
 
         public Supplier<Command> getFixSupplier() {
+            if (fixAction == null) {
+                return null;
+            }
             switch (fixAction) {
             case REMOVE_TAG:
                 return () -> createRemoveTagCommand(way, stripTigerTags);
@@ -174,6 +178,11 @@ public final class TIGERReviewAnalyzer {
                         nadCheckEnabled, stripTigerTags);
             } else if ("name".equals(tigerReviewed)) {
                 analyzeNameReviewedRoad(way, results, nodeVersionCheck, stripTigerTags);
+            } else if (tigerReviewed != null
+                    && !TIGERReviewTest.VALID_REVIEWED_VALUES.contains(tigerReviewed)) {
+                analyzeInvalidReviewedValue(way, tigerReviewed, results);
+            } else if (hasTigerTags(way)) {
+                analyzeResidualTigerTags(way, results);
             }
         }
 
@@ -208,6 +217,11 @@ public final class TIGERReviewAnalyzer {
                     nadCheckEnabled, stripTigerTags);
         } else if ("name".equals(tigerReviewed)) {
             analyzeNameReviewedRoad(way, results, nodeVersionCheck, stripTigerTags);
+        } else if (tigerReviewed != null
+                && !TIGERReviewTest.VALID_REVIEWED_VALUES.contains(tigerReviewed)) {
+            analyzeInvalidReviewedValue(way, tigerReviewed, results);
+        } else if (hasTigerTags(way)) {
+            analyzeResidualTigerTags(way, results);
         }
 
         return results;
@@ -315,6 +329,40 @@ public final class TIGERReviewAnalyzer {
         }
     }
 
+    /**
+     * Flag a way with an invalid/unrecognized tiger:reviewed value.
+     * No automatic fix — user must decide the correct value.
+     */
+    private static void analyzeInvalidReviewedValue(Way way, String value, List<ReviewResult> results) {
+        results.add(new ReviewResult(way, TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE,
+                value,
+                tr("Invalid tiger:reviewed value"),
+                null, null, false));
+    }
+
+    /**
+     * Analyze a way that has residual tiger:* tags but is already reviewed
+     * (tiger:reviewed=yes, or no tiger:reviewed but other tiger:* tags remain).
+     */
+    private static void analyzeResidualTigerTags(Way way, List<ReviewResult> results) {
+        String tagList = way.getKeys().keySet().stream()
+                .filter(k -> k.startsWith("tiger:"))
+                .sorted()
+                .collect(Collectors.joining(", "));
+        results.add(new ReviewResult(way, TIGERReviewTest.TIGER_RESIDUAL_TAGS,
+                tagList,
+                tr("Review completed, residual TIGER tags can be removed"),
+                FixAction.REMOVE_TAG, null, true));
+    }
+
+    /**
+     * Check if a way has any tiger:* tags (other than tiger:reviewed=no or tiger:reviewed=name,
+     * which are handled by their own analysis branches).
+     */
+    static boolean hasTigerTags(Way way) {
+        return way.getKeys().keySet().stream().anyMatch(k -> k.startsWith("tiger:"));
+    }
+
     // --- Message building utilities ---
 
     static String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch, boolean nadMatch) {
@@ -407,6 +455,10 @@ public final class TIGERReviewAnalyzer {
         } else if (code == TIGERReviewTest.TIGER_SURFACE_SUGGESTED_BOTH_ENDS
                 || code == TIGERReviewTest.TIGER_SURFACE_SUGGESTED_ONE_END) {
             return tr("Surface suggestion");
+        } else if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) {
+            return tr("Review completed, residual TIGER tags can be removed");
+        } else if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) {
+            return tr("Invalid tiger:reviewed value");
         }
         return null;
     }

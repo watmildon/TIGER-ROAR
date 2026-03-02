@@ -73,6 +73,17 @@ public class TIGERReviewTest extends Test {
     /** Name verified via NAD (National Address Database) */
     public static final int TIGER_NAME_VERIFIED_NAD = CODE_PREFIX + 13;
 
+    /** Review completed but residual tiger:* tags remain */
+    public static final int TIGER_RESIDUAL_TAGS = CODE_PREFIX + 14;
+
+    /** tiger:reviewed has an invalid/unrecognized value */
+    public static final int TIGER_REVIEWED_INVALID_VALUE = CODE_PREFIX + 15;
+
+    /** Accepted values for tiger:reviewed (no error triggered).
+     *  "yes" and "position" are legacy but not flagged as errors. */
+    public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("no", "aerial", "name", "yes", "position")));
+
     /** Highway types we care about for TIGER review (based on TagInfo combinations) */
     public static final Set<String> CLASSIFIED_HIGHWAYS = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList(
@@ -199,6 +210,18 @@ public class TIGERReviewTest extends Test {
                         .message(GROUP_MESSAGE, marktr("Unnamed road verified ({0}), can remove tiger:reviewed"), message)
                         .primitives(way)
                         .fix(result.getFixSupplier())
+                        .build();
+            } else if (code == TIGER_RESIDUAL_TAGS) {
+                return TestError.builder(this, Severity.WARNING, code)
+                        .message(GROUP_MESSAGE, marktr("Review completed, residual TIGER tags can be removed ({0})"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            } else if (code == TIGER_REVIEWED_INVALID_VALUE) {
+                return TestError.builder(this, Severity.ERROR, code)
+                        .message(GROUP_MESSAGE,
+                                marktr("tiger:reviewed should be one of no, aerial, or name (found: {0})"), message)
+                        .primitives(way)
                         .build();
             } else {
                 return TestError.builder(this, Severity.WARNING, code)
