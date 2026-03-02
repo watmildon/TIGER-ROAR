@@ -41,9 +41,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for enabling node version check */
     public static final String PREF_ENABLE_NODE_VERSION_CHECK = "tigerreview.check.nodeVersion";
 
-    /** Preference key for enabling surface check */
-    public static final String PREF_ENABLE_SURFACE_CHECK = "tigerreview.check.surface";
-
     /** Preference key for enabling NAD (National Address Database) check */
     public static final String PREF_ENABLE_NAD_CHECK = "tigerreview.check.nad";
 
@@ -78,7 +75,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox connectedRoadCheckBox;
     private JCheckBox addressCheckBox;
     private JCheckBox nodeVersionCheckBox;
-    private JCheckBox surfaceCheckBox;
     private JCheckBox nadCheckBox;
     private JCheckBox stripTigerTagsCheckBox;
     private JTextField additionalBotUsernamesField;
@@ -122,12 +118,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         nodeVersionCheckBox = new JCheckBox(tr("Node version check (alignment verification via node versions)"));
         nodeVersionCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_NODE_VERSION_CHECK, true));
         panel.add(nodeVersionCheckBox, gbc);
-
-        // Surface check
-        gbc.gridy = row++;
-        surfaceCheckBox = new JCheckBox(tr("Surface check (suggest surface from connected roads)"));
-        surfaceCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_SURFACE_CHECK, true));
-        panel.add(surfaceCheckBox, gbc);
 
         // NAD check
         gbc.gridy = row++;
@@ -297,7 +287,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putBoolean(PREF_ENABLE_CONNECTED_ROAD_CHECK, connectedRoadCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_ADDRESS_CHECK, addressCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_NODE_VERSION_CHECK, nodeVersionCheckBox.isSelected());
-        Config.getPref().putBoolean(PREF_ENABLE_SURFACE_CHECK, surfaceCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_NAD_CHECK, nadCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_STRIP_TIGER_TAGS, stripTigerTagsCheckBox.isSelected());
 

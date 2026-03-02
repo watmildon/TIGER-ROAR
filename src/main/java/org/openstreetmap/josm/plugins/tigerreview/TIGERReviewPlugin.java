@@ -19,6 +19,7 @@ public class TIGERReviewPlugin extends Plugin {
     public TIGERReviewPlugin(PluginInformation info) {
         super(info);
         OsmValidator.addTest(TIGERReviewTest.class);
+        OsmValidator.addTest(SurfaceTest.class);
 
         // Register NAD data loader to listen for layer changes
         NadDataLoader.getInstance().register();

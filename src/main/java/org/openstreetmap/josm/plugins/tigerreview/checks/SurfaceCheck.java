@@ -6,7 +6,7 @@ import java.util.List;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewTest;
+import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 
 /**
  * Checks if a road's surface can be inferred from connected roads.
@@ -121,7 +121,7 @@ public class SurfaceCheck {
     private String getValidSurface(Way way) {
         // Must be a classified highway
         String highway = way.get("highway");
-        if (highway == null || !TIGERReviewTest.CLASSIFIED_HIGHWAYS.contains(highway)) {
+        if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
             return null;
         }
 

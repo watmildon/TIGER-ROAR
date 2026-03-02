@@ -19,7 +19,6 @@ import org.openstreetmap.josm.plugins.tigerreview.checks.AddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NadAddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck;
-import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck;
 import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
@@ -64,12 +63,6 @@ public class TIGERReviewTest extends Test {
     /** Name verified via nearby addr:street */
     public static final int TIGER_NAME_VERIFIED_ADDRESS = CODE_PREFIX + 10;
 
-    /** Surface can be inferred from connected roads at both ends */
-    public static final int TIGER_SURFACE_SUGGESTED_BOTH_ENDS = CODE_PREFIX + 11;
-
-    /** Surface can be inferred from connected road at one end */
-    public static final int TIGER_SURFACE_SUGGESTED_ONE_END = CODE_PREFIX + 12;
-
     /** Name verified via NAD (National Address Database) */
     public static final int TIGER_NAME_VERIFIED_NAD = CODE_PREFIX + 13;
 
@@ -87,18 +80,8 @@ public class TIGERReviewTest extends Test {
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList("no", "aerial", "name", "yes", "position", "alignment")));
 
-    /** Highway types we care about for TIGER review (based on TagInfo combinations) */
-    public static final Set<String> CLASSIFIED_HIGHWAYS = Collections.unmodifiableSet(
-            new HashSet<>(Arrays.asList(
-                    "motorway", "motorway_link",
-                    "trunk", "trunk_link",
-                    "primary", "primary_link",
-                    "secondary", "secondary_link",
-                    "tertiary", "tertiary_link",
-                    "unclassified", "residential",
-                    "living_street", "service", "road",
-                    "track",
-                    "path", "footway", "cycleway", "pedestrian")));
+    /** Highway types we care about for TIGER review */
+    public static final Set<String> CLASSIFIED_HIGHWAYS = HighwayConstants.TIGER_HIGHWAYS;
 
     /** Group message for all TIGERReview warnings in the validator tree */
     private static final String GROUP_MESSAGE = tr("TIGERReview");
@@ -106,14 +89,12 @@ public class TIGERReviewTest extends Test {
     private ConnectedRoadCheck connectedRoadCheck;
     private NodeVersionCheck nodeVersionCheck;
     private AddressCheck addressCheck;
-    private SurfaceCheck surfaceCheck;
     private NadAddressCheck nadAddressCheck;
 
     // Check enable flags
     private boolean connectedRoadCheckEnabled;
     private boolean addressCheckEnabled;
     private boolean nodeVersionCheckEnabled;
-    private boolean surfaceCheckEnabled;
     private boolean nadCheckEnabled;
     private boolean stripTigerTags;
 
@@ -132,8 +113,6 @@ public class TIGERReviewTest extends Test {
                 TIGERReviewPreferences.PREF_ENABLE_ADDRESS_CHECK, true);
         nodeVersionCheckEnabled = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_ENABLE_NODE_VERSION_CHECK, true);
-        surfaceCheckEnabled = Config.getPref().getBoolean(
-                TIGERReviewPreferences.PREF_ENABLE_SURFACE_CHECK, true);
         nadCheckEnabled = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
         stripTigerTags = Config.getPref().getBoolean(
@@ -158,7 +137,6 @@ public class TIGERReviewTest extends Test {
         connectedRoadCheck = new ConnectedRoadCheck();
         nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited, additionalBotUsernames);
         addressCheck = new AddressCheck(maxAddressDistance);
-        surfaceCheck = new SurfaceCheck();
         nadAddressCheck = new NadAddressCheck(maxNadDistance);
 
         // Build spatial index for addresses
@@ -181,9 +159,9 @@ public class TIGERReviewTest extends Test {
 
         List<ReviewResult> results = TIGERReviewAnalyzer.analyzeWay(way,
                 connectedRoadCheck, nodeVersionCheck, addressCheck,
-                surfaceCheck, nadAddressCheck,
+                nadAddressCheck,
                 connectedRoadCheckEnabled, addressCheckEnabled,
-                nodeVersionCheckEnabled, surfaceCheckEnabled,
+                nodeVersionCheckEnabled,
                 nadCheckEnabled, stripTigerTags);
 
         for (ReviewResult result : results) {
@@ -260,12 +238,6 @@ public class TIGERReviewTest extends Test {
                     .primitives(way)
                     .fix(result.getFixSupplier())
                     .build();
-        case ADD_SURFACE:
-            return TestError.builder(this, Severity.WARNING, code)
-                    .message(GROUP_MESSAGE, marktr("Surface suggestion: {0}"), message)
-                    .primitives(way)
-                    .fix(result.getFixSupplier())
-                    .build();
         default:
             return TestError.builder(this, Severity.WARNING, code)
                     .message(GROUP_MESSAGE, message)
@@ -281,7 +253,6 @@ public class TIGERReviewTest extends Test {
         connectedRoadCheck = null;
         nodeVersionCheck = null;
         addressCheck = null;
-        surfaceCheck = null;
         nadAddressCheck = null;
         super.endTest();
     }

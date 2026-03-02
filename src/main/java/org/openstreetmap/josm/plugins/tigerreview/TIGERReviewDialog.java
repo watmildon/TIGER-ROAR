@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 
 import javax.swing.AbstractAction;
 import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTree;
 import javax.swing.SwingWorker;
 import javax.swing.ToolTipManager;
@@ -47,6 +48,7 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
+import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataCache;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataLoader;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -55,17 +57,27 @@ import org.openstreetmap.josm.tools.ImageProvider;
 import org.openstreetmap.josm.tools.Shortcut;
 
 /**
- * Side panel for TIGER review results.
+ * Side panel for TIGER review and surface suggestion results.
  *
- * Provides an "Analyze" button that runs the same checks as the validator
- * test, displaying results in a tree view with Fix and Fix All buttons.
+ * Uses a tabbed layout to separate TIGER review results from surface
+ * suggestions. Each tab uses an independent analyzer and provides
+ * Fix / Fix All controls.
  */
 public class TIGERReviewDialog extends ToggleDialog
         implements ActiveLayerChangeListener, DataSelectionListener, CommandQueuePreciseListener {
 
-    private final DefaultMutableTreeNode root;
-    private final JTree tree;
-    private List<ReviewResult> currentResults = new ArrayList<>();
+    private final JTabbedPane tabbedPane;
+
+    // TIGER review tab
+    private final DefaultMutableTreeNode tigerRoot;
+    private final JTree tigerTree;
+
+    // Surface suggestions tab
+    private final DefaultMutableTreeNode surfaceRoot;
+    private final JTree surfaceTree;
+
+    private List<ReviewResult> tigerResults = new ArrayList<>();
+    private List<SurfaceSuggestion> surfaceResults = new ArrayList<>();
 
     private final AbstractAction analyzeAction;
     private final AbstractAction fixAction;
@@ -75,7 +87,7 @@ public class TIGERReviewDialog extends ToggleDialog
     private boolean updatingSelection;
 
     /** Track running analysis to avoid concurrent runs */
-    private SwingWorker<List<ReviewResult>, Void> currentWorker;
+    private SwingWorker<Void, Void> currentWorker;
 
     public TIGERReviewDialog() {
         super(
@@ -90,46 +102,19 @@ public class TIGERReviewDialog extends ToggleDialog
             150
         );
 
-        // --- Results tree ---
-        root = new DefaultMutableTreeNode("Results");
-        tree = new JTree(root);
-        tree.setRootVisible(false);
-        tree.setShowsRootHandles(true);
-        tree.setCellRenderer(new ReviewResultTreeRenderer());
-        ToolTipManager.sharedInstance().registerComponent(tree);
+        // --- TIGER review tree ---
+        tigerRoot = new DefaultMutableTreeNode("Results");
+        tigerTree = createResultTree(tigerRoot);
 
-        // Selection: sync all selected tree items to map selection
-        tree.addTreeSelectionListener(e -> {
-            if (updatingSelection) return;
-            updatingSelection = true;
-            try {
-                DataSet ds = getDataSet();
-                if (ds == null) return;
-                List<ReviewResult> selected = getSelectedResults();
-                if (selected.isEmpty()) return;
-                Set<Way> ways = selected.stream()
-                        .map(ReviewResult::getWay)
-                        .collect(Collectors.toSet());
-                ds.setSelected(ways);
-            } finally {
-                updatingSelection = false;
-            }
-        });
+        // --- Surface suggestions tree ---
+        surfaceRoot = new DefaultMutableTreeNode("Results");
+        surfaceTree = createResultTree(surfaceRoot);
 
-        // Double-click: zoom to way
-        tree.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    TreePath path = tree.getPathForLocation(e.getX(), e.getY());
-                    if (path == null) return;
-                    Object userObj = ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject();
-                    if (userObj instanceof ReviewResult result) {
-                        AutoScaleAction.zoomTo(Collections.singleton(result.getWay()));
-                    }
-                }
-            }
-        });
+        // --- Tabbed pane ---
+        tabbedPane = new JTabbedPane();
+        tabbedPane.addTab(tr("TIGER Review"), new JScrollPane(tigerTree));
+        tabbedPane.addTab(tr("Surface"), new JScrollPane(surfaceTree));
+        tabbedPane.addChangeListener(e -> updateButtonState());
 
         // --- Actions ---
         analyzeAction = new AbstractAction(tr("Analyze")) {
@@ -156,7 +141,7 @@ public class TIGERReviewDialog extends ToggleDialog
         };
         new ImageProvider("dialogs", "fix").getResource().attachImageIcon(fixAllAction, true);
 
-        createLayout(new JScrollPane(tree), false, Arrays.asList(
+        createLayout(tabbedPane, false, Arrays.asList(
             new SideButton(analyzeAction),
             new SideButton(fixAction),
             new SideButton(fixAllAction)
@@ -165,10 +150,76 @@ public class TIGERReviewDialog extends ToggleDialog
         updateButtonState();
     }
 
+    /**
+     * Create a JTree with shared renderer, selection sync, and double-click zoom.
+     */
+    private JTree createResultTree(DefaultMutableTreeNode root) {
+        JTree tree = new JTree(root);
+        tree.setRootVisible(false);
+        tree.setShowsRootHandles(true);
+        tree.setCellRenderer(new ResultTreeRenderer());
+        ToolTipManager.sharedInstance().registerComponent(tree);
+
+        // Selection: sync selected tree items to map selection
+        tree.addTreeSelectionListener(e -> {
+            if (updatingSelection) return;
+            updatingSelection = true;
+            try {
+                DataSet ds = getDataSet();
+                if (ds == null) return;
+                List<TreeDisplayable> selected = getSelectedResultsFromTree(tree);
+                if (selected.isEmpty()) return;
+                Set<Way> ways = selected.stream()
+                        .map(TreeDisplayable::getWay)
+                        .collect(Collectors.toSet());
+                ds.setSelected(ways);
+            } finally {
+                updatingSelection = false;
+            }
+        });
+
+        // Double-click: zoom to way
+        tree.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    TreePath path = tree.getPathForLocation(e.getX(), e.getY());
+                    if (path == null) return;
+                    Object userObj = ((DefaultMutableTreeNode) path.getLastPathComponent()).getUserObject();
+                    if (userObj instanceof TreeDisplayable result) {
+                        AutoScaleAction.zoomTo(Collections.singleton(result.getWay()));
+                    }
+                }
+            }
+        });
+
+        return tree;
+    }
+
     private DataSet getDataSet() {
         OsmDataLayer editLayer = MainApplication.getLayerManager().getEditLayer();
         return editLayer != null ? editLayer.getDataSet() : null;
     }
+
+    // --- Tab helpers ---
+
+    private JTree getActiveTree() {
+        return tabbedPane.getSelectedIndex() == 0 ? tigerTree : surfaceTree;
+    }
+
+    private DefaultMutableTreeNode getActiveRoot() {
+        return tabbedPane.getSelectedIndex() == 0 ? tigerRoot : surfaceRoot;
+    }
+
+    private List<? extends TreeDisplayable> getActiveResults() {
+        return tabbedPane.getSelectedIndex() == 0 ? tigerResults : surfaceResults;
+    }
+
+    private boolean hasAnyResults() {
+        return !tigerResults.isEmpty() || !surfaceResults.isEmpty();
+    }
+
+    // --- Analysis ---
 
     /**
      * Run analysis in a background thread.
@@ -188,24 +239,30 @@ public class TIGERReviewDialog extends ToggleDialog
         setTitle(tr("TIGER Review: analyzing..."));
         analyzeAction.setEnabled(false);
 
-        currentWorker = new SwingWorker<List<ReviewResult>, Void>() {
+        currentWorker = new SwingWorker<Void, Void>() {
+            private List<ReviewResult> tigerRes;
+            private List<SurfaceSuggestion> surfaceRes;
+
             @Override
-            protected List<ReviewResult> doInBackground() {
+            protected Void doInBackground() {
                 // Load NAD data synchronously before analysis if needed
                 if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false)
                         && !NadDataCache.getInstance().isReady()) {
                     NadDataLoader.getInstance().loadForDataSetSync(ds);
                 }
-                return TIGERReviewAnalyzer.analyzeAll(ds);
+                tigerRes = TIGERReviewAnalyzer.analyzeAll(ds);
+                surfaceRes = SurfaceAnalyzer.analyzeAll(ds);
+                return null;
             }
 
             @Override
             protected void done() {
                 try {
                     if (!isCancelled()) {
-                        currentResults = get();
-                        rebuildTree();
-                        setTitle(buildTitle(currentResults.size()));
+                        tigerResults = tigerRes;
+                        surfaceResults = surfaceRes;
+                        rebuildTrees();
+                        setTitle(buildTitle(tigerResults.size() + surfaceResults.size()));
                     }
                 } catch (Exception ex) {
                     clearResults();
@@ -220,37 +277,46 @@ public class TIGERReviewDialog extends ToggleDialog
     }
 
     private void clearResults() {
-        currentResults = new ArrayList<>();
-        rebuildTree();
+        tigerResults = new ArrayList<>();
+        surfaceResults = new ArrayList<>();
+        rebuildTrees();
         setTitle(tr("TIGER Review"));
         updateButtonState();
     }
 
+    // --- Tree building ---
+
     /**
-     * Rebuild the tree from currentResults, grouped by groupMessage
-     * and sorted by completeness (fully verified first).
+     * Rebuild both trees and update tab titles with counts.
      */
-    private void rebuildTree() {
+    private void rebuildTrees() {
+        rebuildSingleTree(tigerRoot, tigerTree, tigerResults);
+        rebuildSingleTree(surfaceRoot, surfaceTree, surfaceResults);
+        updateTabTitles();
+    }
+
+    private void rebuildSingleTree(DefaultMutableTreeNode root, JTree tree,
+            List<? extends TreeDisplayable> results) {
         root.removeAllChildren();
 
         // Group results by groupMessage
-        Map<String, List<ReviewResult>> grouped = new LinkedHashMap<>();
-        for (ReviewResult result : currentResults) {
+        Map<String, List<TreeDisplayable>> grouped = new LinkedHashMap<>();
+        for (TreeDisplayable result : results) {
             grouped.computeIfAbsent(result.getGroupMessage(), k -> new ArrayList<>()).add(result);
         }
 
-        // Sort groups by priority (most complete first)
-        List<Map.Entry<String, List<ReviewResult>>> sortedGroups = new ArrayList<>(grouped.entrySet());
+        // Sort groups by priority (most complete/actionable first)
+        List<Map.Entry<String, List<TreeDisplayable>>> sortedGroups = new ArrayList<>(grouped.entrySet());
         sortedGroups.sort((a, b) -> {
             int pa = getGroupPriority(a.getValue().get(0));
             int pb = getGroupPriority(b.getValue().get(0));
             return Integer.compare(pa, pb);
         });
 
-        for (Map.Entry<String, List<ReviewResult>> entry : sortedGroups) {
+        for (Map.Entry<String, List<TreeDisplayable>> entry : sortedGroups) {
             DefaultMutableTreeNode categoryNode = new DefaultMutableTreeNode(
                     entry.getKey() + " (" + entry.getValue().size() + ")");
-            for (ReviewResult result : entry.getValue()) {
+            for (TreeDisplayable result : entry.getValue()) {
                 categoryNode.add(new DefaultMutableTreeNode(result));
             }
             root.add(categoryNode);
@@ -264,11 +330,16 @@ public class TIGERReviewDialog extends ToggleDialog
         }
     }
 
+    private void updateTabTitles() {
+        tabbedPane.setTitleAt(0, tr("TIGER Review ({0})", tigerResults.size()));
+        tabbedPane.setTitleAt(1, tr("Surface ({0})", surfaceResults.size()));
+    }
+
     /**
      * Priority for sorting groups in the tree.
      * Lower number = higher in the list (most actionable/complete first).
      */
-    private static int getGroupPriority(ReviewResult result) {
+    private static int getGroupPriority(TreeDisplayable result) {
         int code = result.getCode();
         // Fully verified (all name verification codes when paired with alignment)
         if (code == TIGERReviewTest.TIGER_FULLY_VERIFIED
@@ -277,7 +348,8 @@ public class TIGERReviewDialog extends ToggleDialog
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD) {
             // Fully verified and name-only share codes; distinguish by fix action
-            if (result.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+            if (result instanceof ReviewResult rr
+                    && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
                 return 0; // Fully verified
             }
             return 3; // Name verified, alignment needs review
@@ -286,43 +358,46 @@ public class TIGERReviewDialog extends ToggleDialog
         if (code == TIGERReviewTest.TIGER_UNNAMED_VERIFIED) return 2;
         if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 4;
         if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) return 5;
-        if (code == TIGERReviewTest.TIGER_SURFACE_SUGGESTED_BOTH_ENDS) return 6;
-        if (code == TIGERReviewTest.TIGER_SURFACE_SUGGESTED_ONE_END) return 7;
+        if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS) return 6;
+        if (code == SurfaceTest.SURFACE_SUGGESTED_ONE_END) return 7;
         if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 8;
         return 9;
     }
 
+    // --- Fix actions ---
+
     /**
-     * Fix selected items. If a category node is selected, fix all its children.
+     * Fix selected items in the active tab. If a category node is selected, fix all its children.
      */
     private void fixSelected() {
-        List<ReviewResult> toFix = getSelectedResults();
+        List<TreeDisplayable> toFix = getSelectedResultsFromTree(getActiveTree());
         if (toFix.isEmpty()) return;
         applyFixes(toFix);
     }
 
     private void fixAll() {
-        if (currentResults.isEmpty()) return;
-        applyFixes(new ArrayList<>(currentResults));
+        List<? extends TreeDisplayable> results = getActiveResults();
+        if (results.isEmpty()) return;
+        applyFixes(new ArrayList<>(results));
     }
 
     /**
-     * Gather ReviewResults from the current tree selection.
+     * Gather results from a tree's current selection.
      */
-    private List<ReviewResult> getSelectedResults() {
-        List<ReviewResult> results = new ArrayList<>();
+    private List<TreeDisplayable> getSelectedResultsFromTree(JTree tree) {
+        List<TreeDisplayable> results = new ArrayList<>();
         TreePath[] paths = tree.getSelectionPaths();
         if (paths == null) return results;
 
         for (TreePath path : paths) {
             DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
-            if (node.getUserObject() instanceof ReviewResult result) {
+            if (node.getUserObject() instanceof TreeDisplayable result) {
                 results.add(result);
             } else if (!node.isLeaf()) {
                 // Category node: collect all children
                 for (int i = 0; i < node.getChildCount(); i++) {
                     DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
-                    if (child.getUserObject() instanceof ReviewResult result) {
+                    if (child.getUserObject() instanceof TreeDisplayable result) {
                         results.add(result);
                     }
                 }
@@ -334,9 +409,9 @@ public class TIGERReviewDialog extends ToggleDialog
     /**
      * Apply fix commands and re-analyze.
      */
-    private void applyFixes(List<ReviewResult> toFix) {
+    private void applyFixes(List<? extends TreeDisplayable> toFix) {
         List<Command> commands = new ArrayList<>();
-        for (ReviewResult result : toFix) {
+        for (TreeDisplayable result : toFix) {
             Supplier<Command> supplier = result.getFixSupplier();
             if (supplier != null) {
                 Command cmd = supplier.get();
@@ -353,7 +428,7 @@ public class TIGERReviewDialog extends ToggleDialog
     }
 
     private void updateButtonState() {
-        boolean hasResults = !currentResults.isEmpty();
+        boolean hasResults = !getActiveResults().isEmpty();
         fixAction.setEnabled(hasResults);
         fixAllAction.setEnabled(hasResults);
     }
@@ -399,21 +474,21 @@ public class TIGERReviewDialog extends ToggleDialog
 
     @Override
     public void commandUndone(UndoRedoHandler.CommandUndoneEvent e) {
-        if (!currentResults.isEmpty()) {
+        if (hasAnyResults()) {
             analyze();
         }
     }
 
     @Override
     public void commandRedone(UndoRedoHandler.CommandRedoneEvent e) {
-        if (!currentResults.isEmpty()) {
+        if (hasAnyResults()) {
             analyze();
         }
     }
 
     @Override
     public void cleaned(UndoRedoHandler.CommandQueueCleanedEvent e) {
-        if (!currentResults.isEmpty()) {
+        if (hasAnyResults()) {
             analyze();
         }
     }
@@ -421,7 +496,7 @@ public class TIGERReviewDialog extends ToggleDialog
     @Override
     public void preferenceChanged(PreferenceChangeEvent e) {
         super.preferenceChanged(e);
-        if (e.getKey().startsWith("tigerreview.") && !currentResults.isEmpty()) {
+        if (e.getKey().startsWith("tigerreview.") && hasAnyResults()) {
             analyze();
         }
     }
@@ -443,37 +518,46 @@ public class TIGERReviewDialog extends ToggleDialog
                     .collect(Collectors.toSet());
 
             if (selectedWays.isEmpty()) {
-                tree.clearSelection();
+                tigerTree.clearSelection();
+                surfaceTree.clearSelection();
                 return;
             }
 
-            // Find matching tree nodes and select them
-            List<TreePath> matchingPaths = new ArrayList<>();
-            for (int i = 0; i < root.getChildCount(); i++) {
-                DefaultMutableTreeNode category = (DefaultMutableTreeNode) root.getChildAt(i);
-                for (int j = 0; j < category.getChildCount(); j++) {
-                    DefaultMutableTreeNode leaf = (DefaultMutableTreeNode) category.getChildAt(j);
-                    if (leaf.getUserObject() instanceof ReviewResult result
-                            && selectedWays.contains(result.getWay())) {
-                        matchingPaths.add(new TreePath(leaf.getPath()));
-                    }
-                }
-            }
-
-            if (!matchingPaths.isEmpty()) {
-                tree.setSelectionPaths(matchingPaths.toArray(new TreePath[0]));
-                tree.scrollPathToVisible(matchingPaths.get(0));
-            } else {
-                tree.clearSelection();
-            }
+            // Sync both trees; only scroll the active one
+            syncTreeSelection(tigerTree, tigerRoot, selectedWays, tigerTree == getActiveTree());
+            syncTreeSelection(surfaceTree, surfaceRoot, selectedWays, surfaceTree == getActiveTree());
         } finally {
             updatingSelection = false;
         }
     }
 
+    private void syncTreeSelection(JTree tree, DefaultMutableTreeNode root,
+            Set<Way> selectedWays, boolean scrollVisible) {
+        List<TreePath> matchingPaths = new ArrayList<>();
+        for (int i = 0; i < root.getChildCount(); i++) {
+            DefaultMutableTreeNode category = (DefaultMutableTreeNode) root.getChildAt(i);
+            for (int j = 0; j < category.getChildCount(); j++) {
+                DefaultMutableTreeNode leaf = (DefaultMutableTreeNode) category.getChildAt(j);
+                if (leaf.getUserObject() instanceof TreeDisplayable result
+                        && selectedWays.contains(result.getWay())) {
+                    matchingPaths.add(new TreePath(leaf.getPath()));
+                }
+            }
+        }
+
+        if (!matchingPaths.isEmpty()) {
+            tree.setSelectionPaths(matchingPaths.toArray(new TreePath[0]));
+            if (scrollVisible) {
+                tree.scrollPathToVisible(matchingPaths.get(0));
+            }
+        } else {
+            tree.clearSelection();
+        }
+    }
+
     // --- Tree cell renderer ---
 
-    private static class ReviewResultTreeRenderer extends DefaultTreeCellRenderer {
+    private static class ResultTreeRenderer extends DefaultTreeCellRenderer {
         @Override
         public Component getTreeCellRendererComponent(JTree tree, Object value,
                 boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
@@ -481,7 +565,7 @@ public class TIGERReviewDialog extends ToggleDialog
             if (!(value instanceof DefaultMutableTreeNode node)) return this;
             Object userObj = node.getUserObject();
 
-            if (userObj instanceof ReviewResult result) {
+            if (userObj instanceof TreeDisplayable result) {
                 // Leaf node: show way info + evidence with tag-aware icon
                 Way way = result.getWay();
                 String name = way.get("name");

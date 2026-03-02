@@ -6,7 +6,7 @@ import java.util.List;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewTest;
+import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 
 /**
  * Checks if a road's name is corroborated by connected roads.
@@ -103,7 +103,7 @@ public class ConnectedRoadCheck {
     private boolean isCorroboratingRoad(Way connectedWay, String name) {
         // Must be a classified highway
         String highway = connectedWay.get("highway");
-        if (highway == null || !TIGERReviewTest.CLASSIFIED_HIGHWAYS.contains(highway)) {
+        if (highway == null || !HighwayConstants.TIGER_HIGHWAYS.contains(highway)) {
             return false;
         }
 
