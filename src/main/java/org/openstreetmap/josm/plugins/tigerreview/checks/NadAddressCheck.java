@@ -75,4 +75,26 @@ public class NadAddressCheck {
 
         return cache.findMatchingName(way, name, maxDistanceMeters);
     }
+
+    /**
+     * Find the most common NAD street name along a way that does NOT match the
+     * given OSM name. Used to suggest that a road might have a different name
+     * than what OSM currently records.
+     *
+     * @param way  The way to check
+     * @param name The current OSM name (matches are excluded)
+     * @return The most common non-matching NAD street name, or null if none found
+     */
+    public String findSuggestedName(Way way, String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+
+        NadDataCache cache = NadDataCache.getInstance();
+        if (!cache.isReady()) {
+            return null;
+        }
+
+        return cache.findMostCommonStreetName(way, name, maxDistanceMeters);
+    }
 }

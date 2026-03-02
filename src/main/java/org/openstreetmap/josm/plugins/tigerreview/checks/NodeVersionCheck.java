@@ -350,6 +350,12 @@ public class NodeVersionCheck {
      * @return true if the node appears to have been human-edited
      */
     private boolean isNodeEdited(Node node) {
+        // A node modified in the current editing session counts as human-edited,
+        // even if the last *uploaded* editor was a bot.
+        if (node.isModified()) {
+            return true;
+        }
+
         int version = getEffectiveVersion(node);
 
         // Version 0 means not uploaded yet

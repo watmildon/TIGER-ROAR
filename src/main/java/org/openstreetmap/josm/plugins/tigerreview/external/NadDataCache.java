@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.plugins.tigerreview.external;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -300,6 +301,104 @@ public class NadDataCache {
         }
 
         return fuzzyMatch;
+    }
+
+    /**
+     * Find the most common NAD street name near a way, excluding names that match
+     * the given OSM name (exact or fuzzy). Used to suggest that a road might have
+     * a different name than what OSM currently records.
+     *
+     * @param way              The way to check
+     * @param osmName          The current OSM name to exclude from results
+     * @param maxDistanceMeters Maximum distance to search
+     * @return The most common non-matching NAD street name near the way, or null if none found
+     */
+    public String findMostCommonStreetName(Way way, String osmName, double maxDistanceMeters) {
+        if (osmName == null || osmName.isEmpty()) {
+            return null;
+        }
+
+        lock.readLock().lock();
+        try {
+            if (!ready || addressGrid.isEmpty()) {
+                return null;
+            }
+
+            // Collect all NAD street names near the way (excluding matches)
+            Map<String, Integer> nameCounts = new HashMap<>();
+            List<Node> nodes = way.getNodes();
+
+            for (int i = 0; i < nodes.size() - 1; i++) {
+                Node n1 = nodes.get(i);
+                Node n2 = nodes.get(i + 1);
+
+                if (!n1.isLatLonKnown() || !n2.isLatLonKnown()) {
+                    continue;
+                }
+
+                EastNorth en1 = n1.getEastNorth();
+                EastNorth en2 = n2.getEastNorth();
+
+                if (en1 == null || en2 == null) {
+                    continue;
+                }
+
+                collectStreetNamesNearSegment(en1, en2, osmName, maxDistanceMeters, nameCounts);
+            }
+
+            if (nameCounts.isEmpty()) {
+                return null;
+            }
+
+            // Return the most common name
+            return Collections.max(nameCounts.entrySet(), Map.Entry.comparingByValue()).getKey();
+
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Collect NAD street names near a segment, excluding names that match osmName
+     * (exact or fuzzy). Counts are accumulated into the provided map.
+     */
+    private void collectStreetNamesNearSegment(EastNorth en1, EastNorth en2, String osmName,
+            double maxDistance, Map<String, Integer> nameCounts) {
+        double minX = Math.min(en1.getX(), en2.getX()) - maxDistance;
+        double maxX = Math.max(en1.getX(), en2.getX()) + maxDistance;
+        double minY = Math.min(en1.getY(), en2.getY()) - maxDistance;
+        double maxY = Math.max(en1.getY(), en2.getY()) + maxDistance;
+
+        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
+        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
+        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
+        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
+
+        for (int cx = minCellX; cx <= maxCellX; cx++) {
+            for (int cy = minCellY; cy <= maxCellY; cy++) {
+                GridCell cell = new GridCell(cx, cy);
+                List<NadAddressData> addresses = addressGrid.get(cell);
+
+                if (addresses == null) {
+                    continue;
+                }
+
+                for (NadAddressData addr : addresses) {
+                    double dist = distanceToSegment(addr.location(), en1, en2);
+                    if (dist > maxDistance) {
+                        continue;
+                    }
+
+                    // Skip names that match the OSM name (exact or fuzzy)
+                    if (osmName.equalsIgnoreCase(addr.streetName())
+                            || StringDistance.isFuzzyMatch(osmName, addr.streetName())) {
+                        continue;
+                    }
+
+                    nameCounts.merge(addr.streetName(), 1, Integer::sum);
+                }
+            }
+        }
     }
 
     /**

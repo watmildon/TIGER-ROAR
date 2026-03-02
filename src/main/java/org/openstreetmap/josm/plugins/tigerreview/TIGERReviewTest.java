@@ -79,6 +79,9 @@ public class TIGERReviewTest extends Test {
     /** tiger:reviewed has an invalid/unrecognized value */
     public static final int TIGER_REVIEWED_INVALID_VALUE = CODE_PREFIX + 15;
 
+    /** NAD addresses along road suggest a different name */
+    public static final int TIGER_NAD_NAME_SUGGESTION = CODE_PREFIX + 16;
+
     /** Accepted values for tiger:reviewed (no error triggered).
      *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
@@ -196,6 +199,27 @@ public class TIGERReviewTest extends Test {
         int code = result.getCode();
         String message = result.getMessage();
 
+        // Handle no-fix results (null fixAction) before the switch
+        if (result.getFixAction() == null) {
+            if (code == TIGER_NAD_NAME_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD suggests different name [NAD: {0}]"), message)
+                        .primitives(way)
+                        .build();
+            }
+            if (code == TIGER_REVIEWED_INVALID_VALUE) {
+                return TestError.builder(this, Severity.ERROR, code)
+                        .message(GROUP_MESSAGE,
+                                marktr("tiger:reviewed should be one of no, aerial, or name (found: {0})"), message)
+                        .primitives(way)
+                        .build();
+            }
+            return TestError.builder(this, Severity.WARNING, code)
+                    .message(GROUP_MESSAGE, message)
+                    .primitives(way)
+                    .build();
+        }
+
         // Use marktr() message patterns for translation extraction
         switch (result.getFixAction()) {
         case REMOVE_TAG:
@@ -216,12 +240,6 @@ public class TIGERReviewTest extends Test {
                         .message(GROUP_MESSAGE, marktr("Review completed, residual TIGER tags can be removed ({0})"), message)
                         .primitives(way)
                         .fix(result.getFixSupplier())
-                        .build();
-            } else if (code == TIGER_REVIEWED_INVALID_VALUE) {
-                return TestError.builder(this, Severity.ERROR, code)
-                        .message(GROUP_MESSAGE,
-                                marktr("tiger:reviewed should be one of no, aerial, or name (found: {0})"), message)
-                        .primitives(way)
                         .build();
             } else {
                 return TestError.builder(this, Severity.WARNING, code)

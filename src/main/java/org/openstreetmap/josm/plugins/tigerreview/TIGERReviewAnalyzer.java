@@ -4,6 +4,7 @@ package org.openstreetmap.josm.plugins.tigerreview;
 import static org.openstreetmap.josm.tools.I18n.tr;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
 import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.SequenceCommand;
+import org.openstreetmap.josm.data.osm.AbstractPrimitive;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.checks.AddressCheck;
@@ -271,6 +273,14 @@ public final class TIGERReviewAnalyzer {
             }
         }
 
+        // If NAD is enabled, road has a name, but no evidence found from any source,
+        // check if NAD addresses along the way suggest a different name
+        String nadSuggestedName = null;
+        if (hasName && nadCheckEnabled && !nadMatch
+                && connectionType == ConnectionType.NONE && !addressMatch) {
+            nadSuggestedName = nadAddressCheck.findSuggestedName(way, name);
+        }
+
         // Gather alignment evidence
         AlignmentResult alignmentResult = nodeVersionCheckEnabled
                 ? nodeVersionCheck.checkAlignment(way)
@@ -313,6 +323,14 @@ public final class TIGERReviewAnalyzer {
                         tr("Unnamed road verified"),
                         FixAction.REMOVE_TAG, null, stripTigerTags));
             }
+        }
+
+        // NAD name suggestion (independent — informational only, no fix)
+        if (nadSuggestedName != null) {
+            results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION,
+                    nadSuggestedName,
+                    tr("NAD suggests different name"),
+                    null, null, false));
         }
 
         // Surface suggestion (independent)
@@ -404,8 +422,18 @@ public final class TIGERReviewAnalyzer {
             results.add(new ReviewResult(way, code, nameEvidence,
                     tr("Fully verified"),
                     FixAction.REMOVE_TAG, null, stripTigerTags));
+        } else if (nadCheckEnabled && !nadMatch
+                && connectionType == ConnectionType.NONE && !addressMatch) {
+            // No name evidence at all — check if NAD suggests a different name
+            String nadSuggestedName = nadAddressCheck.findSuggestedName(way, name);
+            if (nadSuggestedName != null) {
+                results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION,
+                        nadSuggestedName,
+                        tr("NAD suggests different name"),
+                        null, null, false));
+            }
         }
-        // If name is not corroborated, no action — alignment is already recorded
+        // If name is not corroborated and no suggestion, no action — alignment is already recorded
     }
 
     /**
@@ -424,10 +452,14 @@ public final class TIGERReviewAnalyzer {
      * (tiger:reviewed=yes, or no tiger:reviewed but other tiger:* tags remain).
      */
     private static void analyzeResidualTigerTags(Way way, List<ReviewResult> results) {
+        Collection<String> discardable = AbstractPrimitive.getDiscardableKeys();
         String tagList = way.getKeys().keySet().stream()
-                .filter(k -> k.startsWith("tiger:"))
+                .filter(k -> k.startsWith("tiger:") && !discardable.contains(k))
                 .sorted()
                 .collect(Collectors.joining(", "));
+        if (tagList.isEmpty()) {
+            return; // Only discardable tiger tags remain — JOSM will drop them on upload
+        }
         results.add(new ReviewResult(way, TIGERReviewTest.TIGER_RESIDUAL_TAGS,
                 tagList,
                 tr("Review completed, residual TIGER tags can be removed"),
@@ -435,11 +467,15 @@ public final class TIGERReviewAnalyzer {
     }
 
     /**
-     * Check if a way has any tiger:* tags (other than tiger:reviewed=no or tiger:reviewed=name,
-     * which are handled by their own analysis branches).
+     * Check if a way has any non-discardable tiger:* tags (other than tiger:reviewed=no
+     * or tiger:reviewed=name, which are handled by their own analysis branches).
+     * Tags in JOSM's discardable set (e.g. tiger:source, tiger:tlid) are ignored
+     * because JOSM silently drops them on upload.
      */
     static boolean hasTigerTags(Way way) {
-        return way.getKeys().keySet().stream().anyMatch(k -> k.startsWith("tiger:"));
+        Collection<String> discardable = AbstractPrimitive.getDiscardableKeys();
+        return way.getKeys().keySet().stream()
+                .anyMatch(k -> k.startsWith("tiger:") && !discardable.contains(k));
     }
 
     // --- Message building utilities ---
@@ -543,6 +579,8 @@ public final class TIGERReviewAnalyzer {
             return tr("Review completed, residual TIGER tags can be removed");
         } else if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) {
             return tr("Invalid tiger:reviewed value");
+        } else if (code == TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION) {
+            return tr("NAD suggests different name");
         }
         return null;
     }
@@ -551,9 +589,10 @@ public final class TIGERReviewAnalyzer {
 
     static Command createRemoveTagCommand(Way way, boolean stripAllTigerTags) {
         if (stripAllTigerTags) {
+            Collection<String> discardable = AbstractPrimitive.getDiscardableKeys();
             List<Command> commands = new ArrayList<>();
             for (String key : way.getKeys().keySet()) {
-                if (key.startsWith("tiger:")) {
+                if (key.startsWith("tiger:") && !discardable.contains(key)) {
                     commands.add(new ChangePropertyCommand(way, key, null));
                 }
             }
