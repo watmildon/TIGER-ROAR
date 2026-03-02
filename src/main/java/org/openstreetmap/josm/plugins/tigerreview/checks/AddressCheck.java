@@ -97,6 +97,11 @@ public class AddressCheck {
             return false;
         }
 
+        // Scale the distance threshold to account for Mercator projection distortion.
+        // EastNorth coordinates (EPSG:3857) inflate distances by 1/cos(lat), so we
+        // scale our threshold by the same factor to keep the ground-distance meaning.
+        double scaledMaxDistance = computeScaledDistance(way);
+
         // Check each segment of the way
         List<Node> nodes = way.getNodes();
         for (int i = 0; i < nodes.size() - 1; i++) {
@@ -115,7 +120,7 @@ public class AddressCheck {
             }
 
             // Check addresses near this segment
-            if (hasMatchingAddressNearSegment(en1, en2, name)) {
+            if (hasMatchingAddressNearSegment(en1, en2, name, scaledMaxDistance)) {
                 return true;
             }
         }
@@ -124,14 +129,24 @@ public class AddressCheck {
     }
 
     /**
+     * Compute the max distance threshold scaled for Mercator distortion at the way's latitude.
+     */
+    private double computeScaledDistance(Way way) {
+        double lat = way.getBBox().getCenter().lat();
+        double scaleFactor = 1.0 / Math.cos(Math.toRadians(lat));
+        return maxDistanceMeters * scaleFactor;
+    }
+
+    /**
      * Check if there's a matching address near a line segment.
      */
-    private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String name) {
-        // Calculate bounding box around segment with buffer
-        double minX = Math.min(en1.getX(), en2.getX()) - maxDistanceMeters;
-        double maxX = Math.max(en1.getX(), en2.getX()) + maxDistanceMeters;
-        double minY = Math.min(en1.getY(), en2.getY()) - maxDistanceMeters;
-        double maxY = Math.max(en1.getY(), en2.getY()) + maxDistanceMeters;
+    private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String name,
+            double scaledMaxDistance) {
+        // Calculate bounding box around segment with buffer (using scaled distance)
+        double minX = Math.min(en1.getX(), en2.getX()) - scaledMaxDistance;
+        double maxX = Math.max(en1.getX(), en2.getX()) + scaledMaxDistance;
+        double minY = Math.min(en1.getY(), en2.getY()) - scaledMaxDistance;
+        double maxY = Math.max(en1.getY(), en2.getY()) + scaledMaxDistance;
 
         // Calculate grid cell range to check
         int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
@@ -154,7 +169,7 @@ public class AddressCheck {
                     if (name.equalsIgnoreCase(addr.streetName)) {
                         // Check actual distance to segment
                         double dist = distanceToSegment(addr.location, en1, en2);
-                        if (dist <= maxDistanceMeters) {
+                        if (dist <= scaledMaxDistance) {
                             return true;
                         }
                     }
