@@ -25,19 +25,26 @@ public class SurfaceCheck {
         private final String suggestedSurface;
         private final boolean bothEnds;
         private final boolean conflicting;
+        private final boolean upgrade;
 
         public SurfaceResult(String suggestedSurface, boolean bothEnds) {
-            this(suggestedSurface, bothEnds, false);
+            this(suggestedSurface, bothEnds, false, false);
         }
 
-        private SurfaceResult(String suggestedSurface, boolean bothEnds, boolean conflicting) {
+        private SurfaceResult(String suggestedSurface, boolean bothEnds,
+                              boolean conflicting, boolean upgrade) {
             this.suggestedSurface = suggestedSurface;
             this.bothEnds = bothEnds;
             this.conflicting = conflicting;
+            this.upgrade = upgrade;
         }
 
         static SurfaceResult conflict() {
-            return new SurfaceResult(null, false, true);
+            return new SurfaceResult(null, false, true, false);
+        }
+
+        static SurfaceResult upgrade(String surface, boolean bothEnds) {
+            return new SurfaceResult(surface, bothEnds, false, true);
         }
 
         /**
@@ -59,6 +66,13 @@ public class SurfaceCheck {
          */
         public boolean isConflicting() {
             return conflicting;
+        }
+
+        /**
+         * @return true if this is an upgrade from a generic surface (paved/unpaved)
+         */
+        public boolean isUpgrade() {
+            return upgrade;
         }
 
         /**
@@ -91,8 +105,12 @@ public class SurfaceCheck {
      * @return SurfaceResult with suggested surface if found
      */
     public SurfaceResult checkSurface(Way way) {
-        // Don't suggest if way already has a surface
-        if (way.get(SURFACE) != null) {
+        String existingSurface = way.get(SURFACE);
+
+        // Already has a specific surface — nothing to suggest
+        if (existingSurface != null
+                && !"paved".equals(existingSurface)
+                && !"unpaved".equals(existingSurface)) {
             return new SurfaceResult(null, false);
         }
 
@@ -104,9 +122,29 @@ public class SurfaceCheck {
         Node firstNode = nodes.get(0);
         Node lastNode = nodes.get(nodes.size() - 1);
 
-        NodeSurfaceInfo infoAtFirst = getSurfaceFromConnections(firstNode, way);
-        NodeSurfaceInfo infoAtLast = getSurfaceFromConnections(lastNode, way);
+        String name = way.get("name");
+        String highway = way.get("highway");
 
+        NodeSurfaceInfo infoAtFirst = getSurfaceFromConnections(firstNode, way, name, highway);
+        NodeSurfaceInfo infoAtLast = getSurfaceFromConnections(lastNode, way, name, highway);
+
+        SurfaceResult result = evaluateEndpoints(infoAtFirst, infoAtLast);
+
+        // For generic surfaces, validate the suggestion is in the same category
+        if (existingSurface != null && result.hasSuggestion()) {
+            if (!isSameCategory(existingSurface, result.getSuggestedSurface())) {
+                return new SurfaceResult(null, false);
+            }
+            return SurfaceResult.upgrade(result.getSuggestedSurface(), result.isBothEnds());
+        }
+
+        return result;
+    }
+
+    /**
+     * Evaluate endpoint surface info and produce a result.
+     */
+    private SurfaceResult evaluateEndpoints(NodeSurfaceInfo infoAtFirst, NodeSurfaceInfo infoAtLast) {
         // Best case: both ends have matching surfaces
         if (infoAtFirst.surface != null && infoAtFirst.surface.equals(infoAtLast.surface)) {
             return new SurfaceResult(infoAtFirst.surface, true);
@@ -133,26 +171,62 @@ public class SurfaceCheck {
             return new SurfaceResult(infoAtLast.surface, false);
         }
 
-        // Both ends have no info (conflicts at both ends with no clear surface, or just nothing)
+        // Both ends have no info
         return new SurfaceResult(null, false);
     }
 
     /**
+     * Check if a suggested surface is a more specific value in the same category
+     * as the existing generic surface.
+     */
+    private static boolean isSameCategory(String genericSurface, String specificSurface) {
+        if ("paved".equals(genericSurface)) {
+            return HighwayConstants.PAVED_SURFACES.contains(specificSurface);
+        }
+        if ("unpaved".equals(genericSurface)) {
+            return HighwayConstants.UNPAVED_SURFACES.contains(specificSurface);
+        }
+        return false;
+    }
+
+    /**
      * Get the surface from connected roads at a node.
+     * Prefers same-name+highway roads when available, falling back to all roads.
      * Returns a {@link NodeSurfaceInfo} distinguishing "no surface found" from
      * "conflicting surfaces found".
      */
-    private NodeSurfaceInfo getSurfaceFromConnections(Node node, Way excludeWay) {
+    private NodeSurfaceInfo getSurfaceFromConnections(Node node, Way excludeWay,
+                                                      String targetName, String targetHighway) {
+        // First pass: only same-name + same-highway connections
+        NodeSurfaceInfo sameRoad = collectSurfaces(node, excludeWay, targetName, targetHighway);
+        if (sameRoad.surface != null || sameRoad.hasConflict) {
+            return sameRoad;
+        }
+
+        // Fallback: all connected roads
+        return collectSurfaces(node, excludeWay, null, null);
+    }
+
+    /**
+     * Collect surface info from connected roads at a node.
+     * If filterName and filterHighway are non-null, only considers roads matching both.
+     */
+    private NodeSurfaceInfo collectSurfaces(Node node, Way excludeWay,
+                                            String filterName, String filterHighway) {
         String foundSurface = null;
 
         for (OsmPrimitive referrer : node.getReferrers()) {
             if (referrer instanceof Way connectedWay && connectedWay != excludeWay) {
+                if (filterName != null
+                        && (!filterName.equals(connectedWay.get("name"))
+                            || !filterHighway.equals(connectedWay.get("highway")))) {
+                    continue;
+                }
                 String surface = getValidSurface(connectedWay);
                 if (surface != null) {
                     if (foundSurface == null) {
                         foundSurface = surface;
                     } else if (!foundSurface.equals(surface)) {
-                        // Conflicting surfaces at this node
                         return new NodeSurfaceInfo(null, true);
                     }
                 }

@@ -84,7 +84,7 @@ public class TIGERReviewTest extends Test {
     public static final Set<String> CLASSIFIED_HIGHWAYS = HighwayConstants.TIGER_HIGHWAYS;
 
     /** Group message for all TIGERReview warnings in the validator tree */
-    private static final String GROUP_MESSAGE = tr("TIGERReview");
+    private static final String GROUP_MESSAGE = tr("TIGER ROAR");
 
     private ConnectedRoadCheck connectedRoadCheck;
     private NodeVersionCheck nodeVersionCheck;
@@ -99,7 +99,7 @@ public class TIGERReviewTest extends Test {
     private boolean stripTigerTags;
 
     public TIGERReviewTest() {
-        super(tr("TIGER Review"), tr("Validates TIGER-imported roadways for review status"));
+        super(tr("TIGER ROAR"), tr("Validates TIGER-imported roadways for review status"));
     }
 
     @Override

@@ -80,7 +80,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JTextField additionalBotUsernamesField;
 
     public TIGERReviewPreferences() {
-        super("preferences/tiger_review", tr("TIGER Review"), tr("Settings for TIGER Review validator"));
+        super("preferences/tiger_review", tr("TIGER ROAR"), tr("Settings for TIGER ROAR plugin"));
     }
 
     @Override

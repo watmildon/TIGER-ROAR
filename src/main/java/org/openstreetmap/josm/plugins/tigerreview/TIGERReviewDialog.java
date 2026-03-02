@@ -91,12 +91,12 @@ public class TIGERReviewDialog extends ToggleDialog
 
     public TIGERReviewDialog() {
         super(
-            tr("TIGER Review"),
+            tr("TIGER ROAR"),
             "tiger-review",
             tr("Review TIGER-imported roads with corroborating evidence"),
             Shortcut.registerShortcut(
                 "subwindow:tigerreview",
-                tr("Windows: {0}", tr("TIGER Review")),
+                tr("Windows: {0}", tr("TIGER ROAR")),
                 KeyEvent.VK_T, Shortcut.ALT_SHIFT
             ),
             150
@@ -236,7 +236,7 @@ public class TIGERReviewDialog extends ToggleDialog
             currentWorker.cancel(true);
         }
 
-        setTitle(tr("TIGER Review: analyzing..."));
+        setTitle(tr("TIGER ROAR: analyzing..."));
         analyzeAction.setEnabled(false);
 
         currentWorker = new SwingWorker<Void, Void>() {
@@ -266,7 +266,7 @@ public class TIGERReviewDialog extends ToggleDialog
                     }
                 } catch (Exception ex) {
                     clearResults();
-                    setTitle(tr("TIGER Review: error"));
+                    setTitle(tr("TIGER ROAR: error"));
                 } finally {
                     analyzeAction.setEnabled(true);
                     updateButtonState();
@@ -280,7 +280,7 @@ public class TIGERReviewDialog extends ToggleDialog
         tigerResults = new ArrayList<>();
         surfaceResults = new ArrayList<>();
         rebuildTrees();
-        setTitle(tr("TIGER Review"));
+        setTitle(tr("TIGER ROAR"));
         updateButtonState();
     }
 
@@ -360,9 +360,11 @@ public class TIGERReviewDialog extends ToggleDialog
         if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) return 5;
         if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS) return 6;
         if (code == SurfaceTest.SURFACE_SUGGESTED_ONE_END) return 7;
-        if (code == SurfaceTest.SURFACE_CONFLICT) return 8;
-        if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 9;
-        return 10;
+        if (code == SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS) return 8;
+        if (code == SurfaceTest.SURFACE_UPGRADE_ONE_END) return 9;
+        if (code == SurfaceTest.SURFACE_CONFLICT) return 10;
+        if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 11;
+        return 12;
     }
 
     // --- Fix actions ---
@@ -438,7 +440,7 @@ public class TIGERReviewDialog extends ToggleDialog
      * Build the title bar text, including NAD cache status if NAD check is enabled.
      */
     private String buildTitle(int resultCount) {
-        String title = tr("TIGER Review: {0} results", resultCount);
+        String title = tr("TIGER ROAR: {0} results", resultCount);
         if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false)) {
             NadDataCache cache = NadDataCache.getInstance();
             if (cache.isReady()) {

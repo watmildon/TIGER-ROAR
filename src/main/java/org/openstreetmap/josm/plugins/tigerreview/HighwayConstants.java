@@ -7,7 +7,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Shared highway type constants used across TIGER review and surface analysis.
+ * Shared constants for highway types and surface categories,
+ * used across TIGER review and surface analysis.
  */
 public final class HighwayConstants {
 
@@ -46,4 +47,30 @@ public final class HighwayConstants {
                     "unclassified", "residential",
                     "living_street", "service", "road",
                     "track")));
+
+    /**
+     * Specific paved surface values (excludes the generic "paved" itself).
+     * See https://wiki.openstreetmap.org/wiki/Key:surface#Paved
+     */
+    public static final Set<String> PAVED_SURFACES = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList(
+                    "asphalt", "chipseal", "concrete",
+                    "concrete:lanes", "concrete:plates",
+                    "paving_stones", "paving_stones:lanes",
+                    "grass_paver", "sett",
+                    "unhewn_cobblestone", "cobblestone", "cobblestone:flattened",
+                    "bricks", "metal", "metal_grid", "wood",
+                    "stepping_stones", "rubber", "tiles",
+                    "fibre_reinforced_polymer_grate")));
+
+    /**
+     * Specific unpaved surface values (excludes the generic "unpaved" itself).
+     * See https://wiki.openstreetmap.org/wiki/Key:surface#Unpaved
+     */
+    public static final Set<String> UNPAVED_SURFACES = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList(
+                    "compacted", "fine_gravel", "gravel", "shells",
+                    "rock", "pebblestone", "ground", "dirt", "earth",
+                    "grass", "mud", "sand", "woodchips",
+                    "snow", "ice", "salt")));
 }

@@ -91,7 +91,10 @@ public final class SurfaceAnalyzer {
                 continue;
             }
 
-            if (way.get("surface") != null) {
+            String existingSurface = way.get("surface");
+            if (existingSurface != null
+                    && !"paved".equals(existingSurface)
+                    && !"unpaved".equals(existingSurface)) {
                 continue;
             }
 
@@ -103,19 +106,32 @@ public final class SurfaceAnalyzer {
                         null));
             } else if (surfaceResult.hasSuggestion()) {
                 String surface = surfaceResult.getSuggestedSurface();
-                int code;
-                String groupMessage;
-                if (surfaceResult.isBothEnds()) {
-                    code = SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS;
-                    groupMessage = tr("Connected roads at both ends");
+                if (surfaceResult.isUpgrade()) {
+                    int code = surfaceResult.isBothEnds()
+                            ? SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS
+                            : SurfaceTest.SURFACE_UPGRADE_ONE_END;
+                    String groupMessage = surfaceResult.isBothEnds()
+                            ? tr("Upgrade generic surface (both ends)")
+                            : tr("Upgrade generic surface (one end)");
+                    results.add(new SurfaceSuggestion(way, code,
+                            tr("Upgrade: {0} \u2192 {1}", existingSurface, surface),
+                            groupMessage,
+                            surface));
                 } else {
-                    code = SurfaceTest.SURFACE_SUGGESTED_ONE_END;
-                    groupMessage = tr("Connected road at one end");
+                    int code;
+                    String groupMessage;
+                    if (surfaceResult.isBothEnds()) {
+                        code = SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS;
+                        groupMessage = tr("Connected roads at both ends");
+                    } else {
+                        code = SurfaceTest.SURFACE_SUGGESTED_ONE_END;
+                        groupMessage = tr("Connected road at one end");
+                    }
+                    results.add(new SurfaceSuggestion(way, code,
+                            tr("Suggest surface={0}", surface),
+                            groupMessage,
+                            surface));
                 }
-                results.add(new SurfaceSuggestion(way, code,
-                        tr("Suggest surface={0}", surface),
-                        groupMessage,
-                        surface));
             }
         }
 
