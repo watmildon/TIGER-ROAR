@@ -6,7 +6,7 @@ import java.util.List;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
-import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewTest;
+import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 
 /**
  * Checks if a road's surface can be inferred from connected roads.
@@ -24,10 +24,27 @@ public class SurfaceCheck {
     public static class SurfaceResult {
         private final String suggestedSurface;
         private final boolean bothEnds;
+        private final boolean conflicting;
+        private final boolean upgrade;
 
         public SurfaceResult(String suggestedSurface, boolean bothEnds) {
+            this(suggestedSurface, bothEnds, false, false);
+        }
+
+        private SurfaceResult(String suggestedSurface, boolean bothEnds,
+                              boolean conflicting, boolean upgrade) {
             this.suggestedSurface = suggestedSurface;
             this.bothEnds = bothEnds;
+            this.conflicting = conflicting;
+            this.upgrade = upgrade;
+        }
+
+        static SurfaceResult conflict() {
+            return new SurfaceResult(null, false, true, false);
+        }
+
+        static SurfaceResult upgrade(String surface, boolean bothEnds) {
+            return new SurfaceResult(surface, bothEnds, false, true);
         }
 
         /**
@@ -45,10 +62,39 @@ public class SurfaceCheck {
         }
 
         /**
+         * @return true if connected roads have conflicting surfaces (no auto-fix)
+         */
+        public boolean isConflicting() {
+            return conflicting;
+        }
+
+        /**
+         * @return true if this is an upgrade from a generic surface (paved/unpaved)
+         */
+        public boolean isUpgrade() {
+            return upgrade;
+        }
+
+        /**
          * @return true if a surface suggestion was found
          */
         public boolean hasSuggestion() {
             return suggestedSurface != null;
+        }
+    }
+
+    /**
+     * Surface info gathered at a single endpoint node.
+     */
+    private static class NodeSurfaceInfo {
+        /** Consistent surface value, or null if none or conflicting */
+        final String surface;
+        /** True if connected roads at this node have conflicting surfaces */
+        final boolean hasConflict;
+
+        NodeSurfaceInfo(String surface, boolean hasConflict) {
+            this.surface = surface;
+            this.hasConflict = hasConflict;
         }
     }
 
@@ -59,8 +105,12 @@ public class SurfaceCheck {
      * @return SurfaceResult with suggested surface if found
      */
     public SurfaceResult checkSurface(Way way) {
-        // Don't suggest if way already has a surface
-        if (way.get(SURFACE) != null) {
+        String existingSurface = way.get(SURFACE);
+
+        // Already has a specific surface — nothing to suggest
+        if (existingSurface != null
+                && !"paved".equals(existingSurface)
+                && !"unpaved".equals(existingSurface)) {
             return new SurfaceResult(null, false);
         }
 
@@ -72,47 +122,118 @@ public class SurfaceCheck {
         Node firstNode = nodes.get(0);
         Node lastNode = nodes.get(nodes.size() - 1);
 
-        String surfaceAtFirst = getSurfaceFromConnections(firstNode, way);
-        String surfaceAtLast = getSurfaceFromConnections(lastNode, way);
+        String name = way.get("name");
+        String highway = way.get("highway");
 
+        NodeSurfaceInfo infoAtFirst = getSurfaceFromConnections(firstNode, way, name, highway);
+        NodeSurfaceInfo infoAtLast = getSurfaceFromConnections(lastNode, way, name, highway);
+
+        SurfaceResult result = evaluateEndpoints(infoAtFirst, infoAtLast);
+
+        // For generic surfaces, validate the suggestion is in the same category
+        if (existingSurface != null && result.hasSuggestion()) {
+            if (!isSameCategory(existingSurface, result.getSuggestedSurface())) {
+                return new SurfaceResult(null, false);
+            }
+            return SurfaceResult.upgrade(result.getSuggestedSurface(), result.isBothEnds());
+        }
+
+        return result;
+    }
+
+    /**
+     * Evaluate endpoint surface info and produce a result.
+     */
+    private SurfaceResult evaluateEndpoints(NodeSurfaceInfo infoAtFirst, NodeSurfaceInfo infoAtLast) {
         // Best case: both ends have matching surfaces
-        if (surfaceAtFirst != null && surfaceAtFirst.equals(surfaceAtLast)) {
-            return new SurfaceResult(surfaceAtFirst, true);
+        if (infoAtFirst.surface != null && infoAtFirst.surface.equals(infoAtLast.surface)) {
+            return new SurfaceResult(infoAtFirst.surface, true);
         }
 
-        // One end has a surface - still useful but less confident
-        if (surfaceAtFirst != null) {
-            return new SurfaceResult(surfaceAtFirst, false);
-        }
-        if (surfaceAtLast != null) {
-            return new SurfaceResult(surfaceAtLast, false);
+        // Conflict: both ends have a surface but they disagree
+        if (infoAtFirst.surface != null && infoAtLast.surface != null) {
+            return SurfaceResult.conflict();
         }
 
+        // Conflict: one end has a surface, the other has a node-level conflict
+        if (infoAtFirst.surface != null && infoAtLast.hasConflict) {
+            return SurfaceResult.conflict();
+        }
+        if (infoAtLast.surface != null && infoAtFirst.hasConflict) {
+            return SurfaceResult.conflict();
+        }
+
+        // One end has a surface, the other has no info — suggest with lower confidence
+        if (infoAtFirst.surface != null) {
+            return new SurfaceResult(infoAtFirst.surface, false);
+        }
+        if (infoAtLast.surface != null) {
+            return new SurfaceResult(infoAtLast.surface, false);
+        }
+
+        // Both ends have no info
         return new SurfaceResult(null, false);
     }
 
     /**
-     * Get the surface from connected roads at a node.
-     * Returns null if no surface found or if connected roads have conflicting surfaces.
+     * Check if a suggested surface is a more specific value in the same category
+     * as the existing generic surface.
      */
-    private String getSurfaceFromConnections(Node node, Way excludeWay) {
+    private static boolean isSameCategory(String genericSurface, String specificSurface) {
+        if ("paved".equals(genericSurface)) {
+            return HighwayConstants.PAVED_SURFACES.contains(specificSurface);
+        }
+        if ("unpaved".equals(genericSurface)) {
+            return HighwayConstants.UNPAVED_SURFACES.contains(specificSurface);
+        }
+        return false;
+    }
+
+    /**
+     * Get the surface from connected roads at a node.
+     * Prefers same-name+highway roads when available, falling back to all roads.
+     * Returns a {@link NodeSurfaceInfo} distinguishing "no surface found" from
+     * "conflicting surfaces found".
+     */
+    private NodeSurfaceInfo getSurfaceFromConnections(Node node, Way excludeWay,
+                                                      String targetName, String targetHighway) {
+        // First pass: only same-name + same-highway connections
+        NodeSurfaceInfo sameRoad = collectSurfaces(node, excludeWay, targetName, targetHighway);
+        if (sameRoad.surface != null || sameRoad.hasConflict) {
+            return sameRoad;
+        }
+
+        // Fallback: all connected roads
+        return collectSurfaces(node, excludeWay, null, null);
+    }
+
+    /**
+     * Collect surface info from connected roads at a node.
+     * If filterName and filterHighway are non-null, only considers roads matching both.
+     */
+    private NodeSurfaceInfo collectSurfaces(Node node, Way excludeWay,
+                                            String filterName, String filterHighway) {
         String foundSurface = null;
 
         for (OsmPrimitive referrer : node.getReferrers()) {
             if (referrer instanceof Way connectedWay && connectedWay != excludeWay) {
+                if (filterName != null
+                        && (!filterName.equals(connectedWay.get("name"))
+                            || !filterHighway.equals(connectedWay.get("highway")))) {
+                    continue;
+                }
                 String surface = getValidSurface(connectedWay);
                 if (surface != null) {
                     if (foundSurface == null) {
                         foundSurface = surface;
                     } else if (!foundSurface.equals(surface)) {
-                        // Conflicting surfaces at this node - can't suggest
-                        return null;
+                        return new NodeSurfaceInfo(null, true);
                     }
                 }
             }
         }
 
-        return foundSurface;
+        return new NodeSurfaceInfo(foundSurface, false);
     }
 
     /**
@@ -121,7 +242,7 @@ public class SurfaceCheck {
     private String getValidSurface(Way way) {
         // Must be a classified highway
         String highway = way.get("highway");
-        if (highway == null || !TIGERReviewTest.CLASSIFIED_HIGHWAYS.contains(highway)) {
+        if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
             return null;
         }
 

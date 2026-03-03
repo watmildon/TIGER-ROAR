@@ -7,15 +7,17 @@
     This file contains test scenarios for all checks:
     1. Connected Road Check (name corroboration via connected roads)
     2. Address Check (name corroboration via nearby addr:street)
-    3. Node Version Check (alignment verification via node versions)
+    3. Node Version Check (alignment verification via node versions/users)
     4. Surface Check (suggest surface from connected roads)
 
     Load this file in JOSM and run the validator to test.
 
-    TESTING NOTE: Node versions are normally reset when loading OSM files.
-    To enable testing, nodes use the __TEST_VERSION tag which the plugin
-    reads instead of the actual OSM version. This allows testing version-based
-    alignment checks with local test data.
+    TESTING NOTE: Node versions and users are normally reset when loading OSM files.
+    To enable testing, nodes can use these tags:
+    - __TEST_VERSION: Override node version (e.g., "2")
+    - __TEST_USER: Override last editor username (e.g., "woodpeck_fixbot")
+
+    This allows testing version/user-based alignment checks with local test data.
   -->
 
   <!-- ============================================== -->
@@ -286,18 +288,21 @@
 
   <!-- ============================================== -->
   <!-- SCENARIO 8: Unnamed road with alignment check -->
-  <!-- No name, but all nodes edited (version > 1)   -->
+  <!-- No name, but all nodes edited by humans       -->
   <!-- Should suggest removing tiger:reviewed        -->
   <!-- ============================================== -->
 
   <node id='-71' lat='40.0140' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='3'/>
+    <tag k='__TEST_USER' v='mapper_alice'/>
   </node>
   <node id='-72' lat='40.0145' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='mapper_bob'/>
   </node>
   <node id='-73' lat='40.0150' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='4'/>
+    <tag k='__TEST_USER' v='mapper_alice'/>
   </node>
 
   <!-- Unnamed service road with all nodes edited -->
@@ -317,12 +322,15 @@
 
   <node id='-81' lat='40.0160' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='5'/>
+    <tag k='__TEST_USER' v='mapper_charlie'/>
   </node>
   <node id='-82' lat='40.0165' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='3'/>
+    <tag k='__TEST_USER' v='mapper_charlie'/>
   </node>
   <node id='-83' lat='40.0170' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='4'/>
+    <tag k='__TEST_USER' v='mapper_charlie'/>
   </node>
 
   <!-- Road with tiger:reviewed=name and edited nodes -->
@@ -405,12 +413,15 @@
 
   <node id='-221' lat='40.0220' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='3'/>
+    <tag k='__TEST_USER' v='mapper_dave'/>
   </node>
   <node id='-222' lat='40.0225' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='mapper_dave'/>
   </node>
   <node id='-223' lat='40.0230' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='4'/>
+    <tag k='__TEST_USER' v='mapper_dave'/>
   </node>
 
   <!-- Road with edited nodes but no name corroboration -->
@@ -472,23 +483,28 @@
   <!-- ============================================== -->
   <!-- SCENARIO 14: High percentage edited (80%+)    -->
   <!-- Tests the percentage threshold check          -->
-  <!-- 4 out of 5 nodes edited = 80%                 -->
+  <!-- 4 out of 5 nodes human-edited = 80%           -->
   <!-- ============================================== -->
 
   <node id='-241' lat='40.0260' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='mapper_eve'/>
   </node>
   <node id='-242' lat='40.0265' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='3'/>
+    <tag k='__TEST_USER' v='mapper_eve'/>
   </node>
   <node id='-243' lat='40.0270' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='DaveHansenTiger'/>
   </node>
   <node id='-244' lat='40.0275' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='mapper_eve'/>
   </node>
   <node id='-245' lat='40.0280' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='4'/>
+    <tag k='__TEST_USER' v='mapper_eve'/>
   </node>
 
   <!-- Road with 80% of nodes edited - should trigger HIGH_PERCENTAGE_EDITED -->
@@ -506,23 +522,28 @@
   <!-- ============================================== -->
   <!-- SCENARIO 15: Below percentage threshold       -->
   <!-- Tests that roads below threshold don't match  -->
-  <!-- 2 out of 5 nodes edited = 40%                 -->
+  <!-- 2 out of 5 nodes human-edited = 40%           -->
   <!-- ============================================== -->
 
   <node id='-251' lat='40.0290' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='mapper_frank'/>
   </node>
   <node id='-252' lat='40.0295' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='DaveHansenTiger'/>
   </node>
   <node id='-253' lat='40.0300' lon='-75.0000'>
-    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='woodpeck_fixbot'/>
   </node>
   <node id='-254' lat='40.0305' lon='-75.0000'>
     <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='mapper_frank'/>
   </node>
   <node id='-255' lat='40.0310' lon='-75.0000'>
-    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='bot-mode'/>
   </node>
 
   <!-- Road with only 40% of nodes edited - should NOT trigger alignment check -->
@@ -534,6 +555,174 @@
     <nd ref='-255'/>
     <tag k='highway' v='residential'/>
     <tag k='name' v='Below Threshold Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 16: Bot-edited nodes (woodpeck_fixbot)-->
+  <!-- All nodes v2 but last edited by bot           -->
+  <!-- Should NOT count as alignment verified        -->
+  <!-- ============================================== -->
+
+  <node id='-261' lat='40.0320' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+  <node id='-262' lat='40.0325' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+  <node id='-263' lat='40.0330' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+
+  <!-- Road with all nodes v2 but bot-edited - should NOT trigger alignment -->
+  <way id='-261' version='1'>
+    <nd ref='-261'/>
+    <nd ref='-262'/>
+    <nd ref='-263'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Bot Edited Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 17: Human-edited v1 nodes            -->
+  <!-- Nodes at v1 but created by real user (post-   -->
+  <!-- TIGER import) - SHOULD count as edited        -->
+  <!-- ============================================== -->
+
+  <node id='-271' lat='40.0340' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='local_mapper_2020'/>
+  </node>
+  <node id='-272' lat='40.0345' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='local_mapper_2020'/>
+  </node>
+  <node id='-273' lat='40.0350' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='local_mapper_2020'/>
+  </node>
+
+  <!-- Road with v1 nodes but human-created - SHOULD trigger alignment -->
+  <way id='-271' version='1'>
+    <nd ref='-271'/>
+    <nd ref='-272'/>
+    <nd ref='-273'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='New Road By Human'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 18: Mixed bot and human edits        -->
+  <!-- 2 of 3 nodes edited by humans (66%)           -->
+  <!-- Should NOT trigger (below 80% threshold)      -->
+  <!-- ============================================== -->
+
+  <node id='-281' lat='40.0360' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='3'/>
+    <tag k='__TEST_USER' v='real_mapper'/>
+  </node>
+  <node id='-282' lat='40.0365' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+  <node id='-283' lat='40.0370' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+    <tag k='__TEST_USER' v='another_mapper'/>
+  </node>
+
+  <!-- Road with 66% human-edited nodes - below threshold -->
+  <way id='-281' version='1'>
+    <nd ref='-281'/>
+    <nd ref='-282'/>
+    <nd ref='-283'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Mixed Editors Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 19: Fallback to version (no user)    -->
+  <!-- Nodes with no __TEST_USER, version > 2        -->
+  <!-- Should fall back to version heuristic         -->
+  <!-- ============================================== -->
+
+  <node id='-291' lat='40.0380' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='3'/>
+  </node>
+  <node id='-292' lat='40.0385' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='4'/>
+  </node>
+  <node id='-293' lat='40.0390' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='3'/>
+  </node>
+
+  <!-- Road with v3+ nodes, no user info - should trigger via fallback -->
+  <way id='-291' version='1'>
+    <nd ref='-291'/>
+    <nd ref='-292'/>
+    <nd ref='-293'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Fallback Version Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 20: Fallback to version (no user, v2)-->
+  <!-- Nodes with no __TEST_USER, version = 2        -->
+  <!-- Should NOT trigger (v2 is bot cleanup range)  -->
+  <!-- ============================================== -->
+
+  <node id='-301' lat='40.0400' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-302' lat='40.0405' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+  <node id='-303' lat='40.0410' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='2'/>
+  </node>
+
+  <!-- Road with v2 nodes, no user info - should NOT trigger -->
+  <way id='-301' version='1'>
+    <nd ref='-301'/>
+    <nd ref='-302'/>
+    <nd ref='-303'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='V2 No User Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- ============================================== -->
+  <!-- SCENARIO 21: Original importer (DaveHansenTiger)-->
+  <!-- Nodes with original importer username         -->
+  <!-- Should NOT count as edited                    -->
+  <!-- ============================================== -->
+
+  <node id='-311' lat='40.0420' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-312' lat='40.0425' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-313' lat='40.0430' lon='-75.0000'>
+    <tag k='__TEST_VERSION' v='1'/>
+    <tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <!-- Road with original import nodes - should NOT trigger alignment -->
+  <way id='-311' version='1'>
+    <nd ref='-311'/>
+    <nd ref='-312'/>
+    <nd ref='-313'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Original Import Road'/>
     <tag k='tiger:reviewed' v='no'/>
   </way>
 

@@ -16,3 +16,14 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# AI/LLM
+.claude/
+.cursorrules
+.cursorignore
+.cursor/
+.aider*
+.github/copilot-*
+CLAUDE2.md
+Critique.md
+scratch/

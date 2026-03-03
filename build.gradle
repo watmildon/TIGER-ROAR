@@ -4,12 +4,13 @@ plugins {
 }
 
 josm {
-    pluginName = 'TIGERReview'
+    pluginName = 'TIGER-ROAR'
     josmCompileVersion = 19439
     manifest {
         description = 'Validator warnings for TIGER review'
         mainClass = 'org.openstreetmap.josm.plugins.tigerreview.TIGERReviewPlugin'
         minJosmVersion = 19439
+        iconPath = 'images/dialogs/tiger-review.svg'
     }
 }
 

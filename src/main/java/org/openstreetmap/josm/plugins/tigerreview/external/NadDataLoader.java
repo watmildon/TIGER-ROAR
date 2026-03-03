@@ -6,7 +6,10 @@ import java.util.List;
 import javax.swing.SwingWorker;
 
 import org.openstreetmap.josm.data.Bounds;
+import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.gui.MainApplication;
 import org.openstreetmap.josm.gui.layer.Layer;
 import org.openstreetmap.josm.gui.layer.LayerManager;
@@ -108,7 +111,52 @@ public class NadDataLoader implements LayerManager.LayerChangeListener {
             return;
         }
 
-        // Get the bounds of the data
+        loadForDataSet(dataSet);
+    }
+
+    /**
+     * Load NAD data for a dataset asynchronously.
+     *
+     * @param dataSet The dataset to load NAD data for
+     */
+    public void loadForDataSet(DataSet dataSet) {
+        Bounds bounds = computeBounds(dataSet);
+        if (bounds != null) {
+            loadNadDataAsync(bounds);
+        }
+    }
+
+    /**
+     * Load NAD data for a dataset synchronously. Call from a background thread only.
+     *
+     * @param dataSet The dataset to load NAD data for
+     */
+    public void loadForDataSetSync(DataSet dataSet) {
+        Bounds bounds = computeBounds(dataSet);
+        if (bounds != null) {
+            fetchNadData(bounds);
+        }
+    }
+
+    /**
+     * Buffer in degrees to pad computed bounds (~100m at mid-latitudes).
+     * Ensures the NAD query area extends beyond the ways themselves so that
+     * nearby addresses on either side of a road are included.
+     */
+    private static final double BOUNDS_BUFFER_DEGREES = 0.001;
+
+    /**
+     * Compute the query bounds for a dataset, trying data source bounds first
+     * then falling back to bounds of reviewable ways.
+     *
+     * @return bounds to query, or null if none could be determined or not in US
+     */
+    private Bounds computeBounds(DataSet dataSet) {
+        if (!Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false)) {
+            return null;
+        }
+
+        // Try data source bounds first (available when downloaded from API)
         Bounds bounds = null;
         for (Bounds b : dataSet.getDataSourceBounds()) {
             if (bounds == null) {
@@ -118,19 +166,61 @@ public class NadDataLoader implements LayerManager.LayerChangeListener {
             }
         }
 
+        // Fall back to bounds of ways needing review (e.g. loading a .osm file)
+        if (bounds == null || bounds.getArea() == 0) {
+            bounds = computeReviewBounds(dataSet);
+            // Pad computed bounds so nearby addresses are included.
+            // A single straight road produces a very thin bounding box that
+            // would miss addresses on either side.
+            if (bounds != null) {
+                bounds.extend(new LatLon(
+                        bounds.getMinLat() - BOUNDS_BUFFER_DEGREES,
+                        bounds.getMinLon() - BOUNDS_BUFFER_DEGREES));
+                bounds.extend(new LatLon(
+                        bounds.getMaxLat() + BOUNDS_BUFFER_DEGREES,
+                        bounds.getMaxLon() + BOUNDS_BUFFER_DEGREES));
+            }
+        }
+
         if (bounds == null || bounds.getArea() == 0) {
             Logging.debug("Cannot determine bounds for NAD data load");
-            return;
+            return null;
         }
 
         // Check if bounds are in the US
         if (!isInUS(bounds)) {
             Logging.debug("Data bounds not in US, skipping NAD data load");
-            return;
+            return null;
         }
 
-        // Start background load
-        loadNadDataAsync(bounds);
+        return bounds;
+    }
+
+    /**
+     * Compute bounds from ways that have tiger:reviewed=no.
+     * These are the only ways that need NAD corroboration.
+     */
+    private Bounds computeReviewBounds(DataSet dataSet) {
+        Bounds bounds = null;
+        for (Way way : dataSet.getWays()) {
+            if (way.isDeleted() || way.isIncomplete()) {
+                continue;
+            }
+            String reviewed = way.get("tiger:reviewed");
+            if (!"no".equals(reviewed)) {
+                continue;
+            }
+            for (Node node : way.getNodes()) {
+                if (node.isLatLonKnown()) {
+                    if (bounds == null) {
+                        bounds = new Bounds(node.getCoor());
+                    } else {
+                        bounds.extend(node.getCoor());
+                    }
+                }
+            }
+        }
+        return bounds;
     }
 
     /**
@@ -148,6 +238,25 @@ public class NadDataLoader implements LayerManager.LayerChangeListener {
     }
 
     /**
+     * Fetch NAD data synchronously. Safe to call from any thread.
+     */
+    private void fetchNadData(Bounds bounds) {
+        Logging.info("Starting NAD data fetch for bounds: " + bounds);
+
+        NadClient client = new NadClient();
+        NadQueryResult result = client.queryAddresses(bounds);
+
+        if (result.isSuccess()) {
+            List<NadAddress> addresses = result.addresses();
+            NadDataCache.getInstance().load(addresses, bounds);
+            Logging.info("NAD data loaded: " + addresses.size() + " addresses");
+        } else {
+            NadDataCache.getInstance().setError(result.errorMessage());
+            Logging.warn("NAD data load failed: " + result.errorMessage());
+        }
+    }
+
+    /**
      * Load NAD data asynchronously.
      */
     private void loadNadDataAsync(Bounds bounds) {
@@ -157,20 +266,7 @@ public class NadDataLoader implements LayerManager.LayerChangeListener {
         currentTask = new SwingWorker<>() {
             @Override
             protected Void doInBackground() {
-                Logging.info("Starting NAD data fetch for bounds: " + bounds);
-
-                NadClient client = new NadClient();
-                NadQueryResult result = client.queryAddresses(bounds);
-
-                if (result.isSuccess()) {
-                    List<NadAddress> addresses = result.addresses();
-                    NadDataCache.getInstance().load(addresses, bounds);
-                    Logging.info("NAD data loaded: " + addresses.size() + " addresses");
-                } else {
-                    NadDataCache.getInstance().setError(result.errorMessage());
-                    Logging.warn("NAD data load failed: " + result.errorMessage());
-                }
-
+                fetchNadData(bounds);
                 return null;
             }
 

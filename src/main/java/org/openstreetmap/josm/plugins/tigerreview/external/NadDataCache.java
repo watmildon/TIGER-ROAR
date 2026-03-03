@@ -2,6 +2,7 @@
 package org.openstreetmap.josm.plugins.tigerreview.external;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,7 @@ import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
+import org.openstreetmap.josm.plugins.tigerreview.StringDistance;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadClient.NadAddress;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -183,18 +185,38 @@ public class NadDataCache {
      * @return true if a nearby NAD address has a matching street name
      */
     public boolean isNameCorroborated(Way way, String name, double maxDistanceMeters) {
+        return findMatchingName(way, name, maxDistanceMeters) != null;
+    }
+
+    /**
+     * Find the NAD street name that matches the given road name (exact or fuzzy).
+     *
+     * <p>Returns the NAD street name if a nearby NAD address has a matching street name.
+     * If the match is exact (case-insensitive), returns the OSM name unchanged.
+     * If the match is fuzzy (small Levenshtein distance), returns the NAD name so the
+     * caller can surface the discrepancy to the user.</p>
+     *
+     * @param way             The way to check
+     * @param name            The name to look for
+     * @param maxDistanceMeters Maximum distance to search
+     * @return The matching NAD street name, or null if no match found.
+     *         Returns {@code name} itself for exact matches, or the differing NAD name for fuzzy matches.
+     */
+    public String findMatchingName(Way way, String name, double maxDistanceMeters) {
         if (name == null || name.isEmpty()) {
-            return false;
+            return null;
         }
 
         lock.readLock().lock();
         try {
             if (!ready || addressGrid.isEmpty()) {
-                return false;
+                return null;
             }
 
             // Check each segment of the way
             List<Node> nodes = way.getNodes();
+            String fuzzyMatch = null;
+
             for (int i = 0; i < nodes.size() - 1; i++) {
                 Node n1 = nodes.get(i);
                 Node n2 = nodes.get(i + 1);
@@ -210,12 +232,20 @@ public class NadDataCache {
                     continue;
                 }
 
-                if (hasMatchingAddressNearSegment(en1, en2, name, maxDistanceMeters)) {
-                    return true;
+                String match = findMatchingNameNearSegment(en1, en2, name, maxDistanceMeters);
+                if (match != null) {
+                    if (name.equalsIgnoreCase(match)) {
+                        // Exact match — return immediately
+                        return name;
+                    }
+                    // Fuzzy match — keep looking for an exact match
+                    if (fuzzyMatch == null) {
+                        fuzzyMatch = match;
+                    }
                 }
             }
 
-            return false;
+            return fuzzyMatch;
 
         } finally {
             lock.readLock().unlock();
@@ -223,9 +253,11 @@ public class NadDataCache {
     }
 
     /**
-     * Check if there's a matching NAD address near a line segment.
+     * Find a matching NAD street name near a line segment (exact or fuzzy).
+     *
+     * @return The NAD street name if found, or null if no match
      */
-    private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String name, double maxDistance) {
+    private String findMatchingNameNearSegment(EastNorth en1, EastNorth en2, String name, double maxDistance) {
         // Calculate bounding box around segment with buffer
         double minX = Math.min(en1.getX(), en2.getX()) - maxDistance;
         double maxX = Math.max(en1.getX(), en2.getX()) + maxDistance;
@@ -238,6 +270,8 @@ public class NadDataCache {
         int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
         int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
 
+        String fuzzyMatch = null;
+
         // Check all cells in range
         for (int cx = minCellX; cx <= maxCellX; cx++) {
             for (int cy = minCellY; cy <= maxCellY; cy++) {
@@ -249,18 +283,122 @@ public class NadDataCache {
                 }
 
                 for (NadAddressData addr : addresses) {
+                    double dist = distanceToSegment(addr.location(), en1, en2);
+                    if (dist > maxDistance) {
+                        continue;
+                    }
+
                     if (name.equalsIgnoreCase(addr.streetName())) {
-                        // Check actual distance to segment
-                        double dist = distanceToSegment(addr.location(), en1, en2);
-                        if (dist <= maxDistance) {
-                            return true;
-                        }
+                        return addr.streetName(); // exact match — return immediately
+                    }
+
+                    if (fuzzyMatch == null
+                            && StringDistance.isFuzzyMatch(name, addr.streetName())) {
+                        fuzzyMatch = addr.streetName();
                     }
                 }
             }
         }
 
-        return false;
+        return fuzzyMatch;
+    }
+
+    /**
+     * Find the most common NAD street name near a way, excluding names that match
+     * the given OSM name (exact or fuzzy). Used to suggest that a road might have
+     * a different name than what OSM currently records.
+     *
+     * @param way              The way to check
+     * @param osmName          The current OSM name to exclude from results
+     * @param maxDistanceMeters Maximum distance to search
+     * @return The most common non-matching NAD street name near the way, or null if none found
+     */
+    public String findMostCommonStreetName(Way way, String osmName, double maxDistanceMeters) {
+        if (osmName == null || osmName.isEmpty()) {
+            return null;
+        }
+
+        lock.readLock().lock();
+        try {
+            if (!ready || addressGrid.isEmpty()) {
+                return null;
+            }
+
+            // Collect all NAD street names near the way (excluding matches)
+            Map<String, Integer> nameCounts = new HashMap<>();
+            List<Node> nodes = way.getNodes();
+
+            for (int i = 0; i < nodes.size() - 1; i++) {
+                Node n1 = nodes.get(i);
+                Node n2 = nodes.get(i + 1);
+
+                if (!n1.isLatLonKnown() || !n2.isLatLonKnown()) {
+                    continue;
+                }
+
+                EastNorth en1 = n1.getEastNorth();
+                EastNorth en2 = n2.getEastNorth();
+
+                if (en1 == null || en2 == null) {
+                    continue;
+                }
+
+                collectStreetNamesNearSegment(en1, en2, osmName, maxDistanceMeters, nameCounts);
+            }
+
+            if (nameCounts.isEmpty()) {
+                return null;
+            }
+
+            // Return the most common name
+            return Collections.max(nameCounts.entrySet(), Map.Entry.comparingByValue()).getKey();
+
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
+     * Collect NAD street names near a segment, excluding names that match osmName
+     * (exact or fuzzy). Counts are accumulated into the provided map.
+     */
+    private void collectStreetNamesNearSegment(EastNorth en1, EastNorth en2, String osmName,
+            double maxDistance, Map<String, Integer> nameCounts) {
+        double minX = Math.min(en1.getX(), en2.getX()) - maxDistance;
+        double maxX = Math.max(en1.getX(), en2.getX()) + maxDistance;
+        double minY = Math.min(en1.getY(), en2.getY()) - maxDistance;
+        double maxY = Math.max(en1.getY(), en2.getY()) + maxDistance;
+
+        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
+        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
+        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
+        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
+
+        for (int cx = minCellX; cx <= maxCellX; cx++) {
+            for (int cy = minCellY; cy <= maxCellY; cy++) {
+                GridCell cell = new GridCell(cx, cy);
+                List<NadAddressData> addresses = addressGrid.get(cell);
+
+                if (addresses == null) {
+                    continue;
+                }
+
+                for (NadAddressData addr : addresses) {
+                    double dist = distanceToSegment(addr.location(), en1, en2);
+                    if (dist > maxDistance) {
+                        continue;
+                    }
+
+                    // Skip names that match the OSM name (exact or fuzzy)
+                    if (osmName.equalsIgnoreCase(addr.streetName())
+                            || StringDistance.isFuzzyMatch(osmName, addr.streetName())) {
+                        continue;
+                    }
+
+                    nameCounts.merge(addr.streetName(), 1, Integer::sum);
+                }
+            }
+        }
     }
 
     /**

@@ -1,6 +1,7 @@
 package org.openstreetmap.josm.plugins.tigerreview;
 
 import org.openstreetmap.josm.data.validation.OsmValidator;
+import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.plugins.Plugin;
 import org.openstreetmap.josm.plugins.PluginInformation;
@@ -18,9 +19,17 @@ public class TIGERReviewPlugin extends Plugin {
     public TIGERReviewPlugin(PluginInformation info) {
         super(info);
         OsmValidator.addTest(TIGERReviewTest.class);
+        OsmValidator.addTest(SurfaceTest.class);
 
         // Register NAD data loader to listen for layer changes
         NadDataLoader.getInstance().register();
+    }
+
+    @Override
+    public void mapFrameInitialized(MapFrame oldFrame, MapFrame newFrame) {
+        if (newFrame != null) {
+            newFrame.addToggleDialog(new TIGERReviewDialog());
+        }
     }
 
     @Override

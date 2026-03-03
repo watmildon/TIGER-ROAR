@@ -1,0 +1,451 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version='0.6' generator='JOSM'>
+  <node id='-25364' action='modify' visible='true' lat='47.69289816977' lon='-122.1054089123'>
+    <tag k='_test_id' v='1' />
+  </node>
+  <node id='-25366' action='modify' visible='true' lat='47.69290178058' lon='-122.10427165568'>
+    <tag k='_test_id' v='1' />
+  </node>
+  <node id='-25367' action='modify' visible='true' lat='47.69290900221' lon='-122.10294128001'>
+    <tag k='_test_id' v='1' />
+  </node>
+  <node id='-25368' action='modify' visible='true' lat='47.69291622383' lon='-122.10153580248'>
+    <tag k='_test_id' v='1' />
+  </node>
+  <node id='-25385' action='modify' visible='true' lat='47.69261833107' lon='-122.10537136137'>
+    <tag k='_test_id' v='2' />
+  </node>
+  <node id='-25386' action='modify' visible='true' lat='47.6926219419' lon='-122.10423410475'>
+    <tag k='_test_id' v='2' />
+  </node>
+  <node id='-25387' action='modify' visible='true' lat='47.69262916357' lon='-122.10290372908'>
+    <tag k='_test_id' v='2' />
+  </node>
+  <node id='-25388' action='modify' visible='true' lat='47.69263638523' lon='-122.10149825156'>
+    <tag k='_test_id' v='2' />
+  </node>
+  <node id='-25407' action='modify' visible='true' lat='47.6923547397' lon='-122.10543036997'>
+    <tag k='_test_id' v='3' />
+  </node>
+  <node id='-25408' action='modify' visible='true' lat='47.69235835055' lon='-122.10429311335'>
+    <tag k='_test_id' v='3' />
+  </node>
+  <node id='-25409' action='modify' visible='true' lat='47.69236557225' lon='-122.10296273768'>
+    <tag k='_test_id' v='3' />
+  </node>
+  <node id='-25410' action='modify' visible='true' lat='47.69237279395' lon='-122.10155726016'>
+    <tag k='_test_id' v='3' />
+  </node>
+  <node id='-25471' action='modify' visible='true' lat='47.69195032295' lon='-122.10536599696'>
+    <tag k='_test_id' v='4' />
+  </node>
+  <node id='-25472' action='modify' visible='true' lat='47.69195393383' lon='-122.10422874033'>
+    <tag k='_test_id' v='4' />
+  </node>
+  <node id='-25473' action='modify' visible='true' lat='47.69196115558' lon='-122.10289836466'>
+    <tag k='_test_id' v='4' />
+  </node>
+  <node id='-25474' action='modify' visible='true' lat='47.69196837733' lon='-122.10149288714'>
+    <tag k='_test_id' v='4' />
+  </node>
+  <node id='-25488' action='modify' visible='true' lat='47.69221572179' lon='-122.10155726016'>
+    <tag k='_test_id' v='4' />
+  </node>
+  <node id='-25529' action='modify' visible='true' lat='47.69137167656' lon='-122.10551620066'>
+    <tag k='_test_id' v='5' />
+  </node>
+  <node id='-25530' action='modify' visible='true' lat='47.69137528748' lon='-122.10437894404'>
+    <tag k='_test_id' v='5' />
+  </node>
+  <node id='-25531' action='modify' visible='true' lat='47.69138250931' lon='-122.10304856837'>
+    <tag k='_test_id' v='5' />
+  </node>
+  <node id='-25532' action='modify' visible='true' lat='47.69138973115' lon='-122.10164309084'>
+    <tag k='_test_id' v='5' />
+  </node>
+  <node id='-25533' action='modify' visible='true' lat='47.69163707835' lon='-122.10170746386'>
+    <tag k='_test_id' v='5' />
+  </node>
+  <node id='-25540' action='modify' visible='true' lat='47.69103652816' lon='-122.10163774039'>
+    <tag k='_test_id' v='6' />
+  </node>
+  <node id='-25541' action='modify' visible='true' lat='47.69102930628' lon='-122.10304321792'>
+    <tag k='_test_id' v='6' />
+  </node>
+  <node id='-25542' action='modify' visible='true' lat='47.69102208438' lon='-122.10437359359'>
+    <tag k='_test_id' v='6' />
+  </node>
+  <node id='-25543' action='modify' visible='true' lat='47.69101847344' lon='-122.10551085021'>
+    <tag k='_test_id' v='6' />
+  </node>
+  <node id='-25556' action='modify' visible='true' lat='47.69074946495' lon='-122.10161136531'>
+    <tag k='_test_id' v='7' />
+  </node>
+  <node id='-25557' action='modify' visible='true' lat='47.69074224303' lon='-122.10301684284'>
+    <tag k='_test_id' v='7' />
+  </node>
+  <node id='-25558' action='modify' visible='true' lat='47.6907350211' lon='-122.10434721851'>
+    <tag k='_test_id' v='7' />
+  </node>
+  <node id='-25559' action='modify' visible='true' lat='47.69073141014' lon='-122.10548447513'>
+    <tag k='_test_id' v='7' />
+  </node>
+  <node id='-25581' action='modify' visible='true' lat='47.6902201319' lon='-122.10441376937'>
+    <tag k='_test_id' v='8' />
+  </node>
+  <node id='-25582' action='modify' visible='true' lat='47.6902165209' lon='-122.105551026'>
+    <tag k='_test_id' v='8' />
+  </node>
+  <node id='-25583' action='modify' visible='true' lat='47.69023457588' lon='-122.10167791618'>
+    <tag k='_test_id' v='8' />
+  </node>
+  <node id='-25584' action='modify' visible='true' lat='47.69022735389' lon='-122.1030833937'>
+    <tag k='_test_id' v='8' />
+  </node>
+  <node id='-25585' action='modify' visible='true' lat='47.69048192857' lon='-122.1017422892'>
+    <tag k='_test_id' v='8' />
+  </node>
+  <node id='-25646' action='modify' visible='true' lat='47.68972597475' lon='-122.10166991293'>
+    <tag k='_test_id' v='9' />
+  </node>
+  <node id='-25647' action='modify' visible='true' lat='47.68971875269' lon='-122.10307539046'>
+    <tag k='_test_id' v='9' />
+  </node>
+  <node id='-25648' action='modify' visible='true' lat='47.68971153062' lon='-122.10440576613'>
+    <tag k='_test_id' v='9' />
+  </node>
+  <node id='-25649' action='modify' visible='true' lat='47.68970791959' lon='-122.10554302275'>
+    <tag k='_test_id' v='9' />
+  </node>
+  <node id='-25687' action='modify' visible='true' lat='47.6894948682' lon='-122.10552156508'>
+    <tag k='_test_id' v='10' />
+  </node>
+  <node id='-25688' action='modify' visible='true' lat='47.68951292344' lon='-122.10164845526'>
+    <tag k='_test_id' v='10' />
+  </node>
+  <node id='-25689' action='modify' visible='true' lat='47.68950570134' lon='-122.10305393279'>
+    <tag k='_test_id' v='10' />
+  </node>
+  <node id='-25690' action='modify' visible='true' lat='47.68949847924' lon='-122.10438430846'>
+    <tag k='_test_id' v='10' />
+  </node>
+  <node id='-25740' action='modify' visible='true' lat='47.68927820487' lon='-122.10552156508'>
+    <tag k='_test_id' v='11' />
+  </node>
+  <node id='-25741' action='modify' visible='true' lat='47.68929626019' lon='-122.10164845526'>
+    <tag k='_test_id' v='11' />
+  </node>
+  <node id='-25742' action='modify' visible='true' lat='47.68928903807' lon='-122.10305393279'>
+    <tag k='_test_id' v='11' />
+  </node>
+  <node id='-25743' action='modify' visible='true' lat='47.68928181594' lon='-122.10438430846'>
+    <tag k='_test_id' v='11' />
+  </node>
+  <node id='-25770' action='modify' visible='true' lat='47.68905070742' lon='-122.10553765834'>
+    <tag k='_test_id' v='12' />
+  </node>
+  <node id='-25771' action='modify' visible='true' lat='47.68906876281' lon='-122.10166454852'>
+    <tag k='_test_id' v='12' />
+  </node>
+  <node id='-25772' action='modify' visible='true' lat='47.68906154066' lon='-122.10307002605'>
+    <tag k='_test_id' v='12' />
+  </node>
+  <node id='-25773' action='modify' visible='true' lat='47.68905431849' lon='-122.10440040172'>
+    <tag k='_test_id' v='12' />
+  </node>
+  <way id='-579' action='modify' visible='true'>
+    <nd ref='-25364' />
+    <nd ref='-25366' />
+    <tag k='_test_id' v='1' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-581' action='modify' visible='true'>
+    <nd ref='-25366' />
+    <nd ref='-25367' />
+    <tag k='_test_id' v='1' />
+    <tag k='_test_note' v='Suggest surface=asphalt because it is connected at both ends.' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main Street' />
+  </way>
+  <way id='-582' action='modify' visible='true'>
+    <nd ref='-25367' />
+    <nd ref='-25368' />
+    <tag k='_test_id' v='1' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-683' action='modify' visible='true'>
+    <nd ref='-25385' />
+    <nd ref='-25386' />
+    <tag k='_test_id' v='2' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main2 Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-684' action='modify' visible='true'>
+    <nd ref='-25386' />
+    <nd ref='-25387' />
+    <tag k='_test_id' v='1' />
+    <tag k='_test_note' v='Suggest surface=asphalt because it is connected at one end and there&apos;s no conflicting information at the other end.' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main Street' />
+  </way>
+  <way id='-685' action='modify' visible='true'>
+    <nd ref='-25387' />
+    <nd ref='-25388' />
+    <tag k='_test_id' v='2' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main2 Street' />
+  </way>
+  <way id='-709' action='modify' visible='true'>
+    <nd ref='-25407' />
+    <nd ref='-25408' />
+    <tag k='_test_id' v='3' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main3 Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-710' action='modify' visible='true'>
+    <nd ref='-25408' />
+    <nd ref='-25409' />
+    <tag k='_test_id' v='3' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main3 Street' />
+  </way>
+  <way id='-711' action='modify' visible='true'>
+    <nd ref='-25409' />
+    <nd ref='-25410' />
+    <tag k='_test_id' v='2' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main3 Street' />
+    <tag k='surface' v='concrete' />
+  </way>
+  <way id='-775' action='modify' visible='true'>
+    <nd ref='-25471' />
+    <nd ref='-25472' />
+    <tag k='_test_id' v='4' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main4 Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-776' action='modify' visible='true'>
+    <nd ref='-25472' />
+    <nd ref='-25473' />
+    <tag k='_test_id' v='4' />
+    <tag k='_test_note' v='Add to a &quot;Review needed&quot; bucket because we have conflicting information about the surface type at either end (one concrete and one asphalt)' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main4 Street' />
+  </way>
+  <way id='-777' action='modify' visible='true'>
+    <nd ref='-25473' />
+    <nd ref='-25474' />
+    <tag k='_test_id' v='4' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main4 Street' />
+    <tag k='surface' v='concrete' />
+  </way>
+  <way id='-795' action='modify' visible='true'>
+    <nd ref='-25473' />
+    <nd ref='-25488' />
+    <tag k='_test_id' v='4' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='OtherName Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-841' action='modify' visible='true'>
+    <nd ref='-25529' />
+    <nd ref='-25530' />
+    <tag k='_test_id' v='5' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main5 Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-842' action='modify' visible='true'>
+    <nd ref='-25530' />
+    <nd ref='-25531' />
+    <tag k='_test_id' v='5' />
+    <tag k='_test_note' v='Suggest surface=asphalt because same-name+highway roads (Main5 Street primary) agree at both ends. The concrete comes from a differently-named side street (OtherName Street) which is filtered out.' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main5 Street' />
+  </way>
+  <way id='-843' action='modify' visible='true'>
+    <nd ref='-25531' />
+    <nd ref='-25532' />
+    <tag k='_test_id' v='5' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main5 Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-844' action='modify' visible='true'>
+    <nd ref='-25531' />
+    <nd ref='-25533' />
+    <tag k='_test_id' v='5' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='OtherName Street' />
+    <tag k='surface' v='concrete' />
+  </way>
+  <way id='-850' action='modify' visible='true'>
+    <nd ref='-25543' />
+    <nd ref='-25542' />
+    <tag k='_test_id' v='6' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-851' action='modify' visible='true'>
+    <nd ref='-25542' />
+    <nd ref='-25541' />
+    <tag k='_test_id' v='6' />
+    <tag k='_test_note' v='Suggest surface=asphalt because it is connected at both ends.' />
+    <tag k='highway' v='service' />
+  </way>
+  <way id='-852' action='modify' visible='true'>
+    <nd ref='-25541' />
+    <nd ref='-25540' />
+    <tag k='_test_id' v='6' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-869' action='modify' visible='true'>
+    <nd ref='-25557' />
+    <nd ref='-25556' />
+    <tag k='_test_id' v='7' />
+    <tag k='highway' v='service' />
+  </way>
+  <way id='-870' action='modify' visible='true'>
+    <nd ref='-25558' />
+    <nd ref='-25557' />
+    <tag k='_test_id' v='7' />
+    <tag k='_test_note' v='Suggest surface=asphalt because it is connected at one end and there&apos;s no conflicting information at the other end.' />
+    <tag k='highway' v='service' />
+  </way>
+  <way id='-871' action='modify' visible='true'>
+    <nd ref='-25559' />
+    <nd ref='-25558' />
+    <tag k='_test_id' v='7' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-892' action='modify' visible='true'>
+    <nd ref='-25582' />
+    <nd ref='-25581' />
+    <tag k='_test_id' v='8' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main6 Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-893' action='modify' visible='true'>
+    <nd ref='-25581' />
+    <nd ref='-25584' />
+    <tag k='_test_id' v='8' />
+    <tag k='_test_note' v='Add to a &quot;Review needed&quot; bucket because we have conflicting information about the surface type at either end (one concrete and one asphalt)' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Main6 Street' />
+  </way>
+  <way id='-894' action='modify' visible='true'>
+    <nd ref='-25584' />
+    <nd ref='-25583' />
+    <tag k='_test_id' v='8' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Main6 Street' />
+    <tag k='surface' v='concrete' />
+  </way>
+  <way id='-895' action='modify' visible='true'>
+    <nd ref='-25584' />
+    <nd ref='-25585' />
+    <tag k='_test_id' v='8' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='OtherName Street' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-1016' action='modify' visible='true'>
+    <nd ref='-25647' />
+    <nd ref='-25646' />
+    <tag k='_test_id' v='9' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-1017' action='modify' visible='true'>
+    <nd ref='-25648' />
+    <nd ref='-25647' />
+    <tag k='_test_id' v='9' />
+    <tag k='_test_note' v='Suggest surface=asphalt because it is connected at both ends and &quot;paved&quot; can be upgraded to the more sepecific &quot;asphalt&quot;' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='paved' />
+  </way>
+  <way id='-1018' action='modify' visible='true'>
+    <nd ref='-25649' />
+    <nd ref='-25648' />
+    <tag k='_test_id' v='9' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-1074' action='modify' visible='true'>
+    <nd ref='-25689' />
+    <nd ref='-25688' />
+    <tag k='_test_id' v='10' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-1075' action='modify' visible='true'>
+    <nd ref='-25690' />
+    <nd ref='-25689' />
+    <tag k='_test_id' v='10' />
+    <tag k='_test_note' v='No suggestion. &quot;asphalt&quot; is not a more specific version of the generic &quot;unpaved&quot;.' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='unpaved' />
+  </way>
+  <way id='-1076' action='modify' visible='true'>
+    <nd ref='-25687' />
+    <nd ref='-25690' />
+    <tag k='_test_id' v='10' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-1128' action='modify' visible='true'>
+    <nd ref='-25742' />
+    <nd ref='-25741' />
+    <tag k='_test_id' v='11' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='dirt' />
+  </way>
+  <way id='-1129' action='modify' visible='true'>
+    <nd ref='-25743' />
+    <nd ref='-25742' />
+    <tag k='_test_id' v='11' />
+    <tag k='_test_note' v='No suggestion. &quot;dirt&quot; is not a more specific version of the generic &quot;paved&quot;.' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='paved' />
+  </way>
+  <way id='-1130' action='modify' visible='true'>
+    <nd ref='-25740' />
+    <nd ref='-25743' />
+    <tag k='_test_id' v='11' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='dirt' />
+  </way>
+  <way id='-1160' action='modify' visible='true'>
+    <nd ref='-25772' />
+    <nd ref='-25771' />
+    <tag k='_test_id' v='12' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='dirt' />
+  </way>
+  <way id='-1161' action='modify' visible='true'>
+    <nd ref='-25773' />
+    <nd ref='-25772' />
+    <tag k='_test_id' v='12' />
+    <tag k='_test_note' v='Suggest surface=dirt because it is connected at both ends and &quot;unpaved&quot; can be upgraded to the more sepecific &quot;dirt&quot;' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='unpaved' />
+  </way>
+  <way id='-1162' action='modify' visible='true'>
+    <nd ref='-25770' />
+    <nd ref='-25773' />
+    <tag k='_test_id' v='12' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='dirt' />
+  </way>
+</osm>
