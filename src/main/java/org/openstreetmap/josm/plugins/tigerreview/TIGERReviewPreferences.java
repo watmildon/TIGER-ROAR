@@ -68,6 +68,10 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Default minimum percentage of nodes edited for alignment verification (0.0-1.0) */
     public static final double DEFAULT_NODE_MIN_PERCENTAGE_EDITED = 0.8;
 
+    /** HTML snippet for a circled info icon rendered inline in Swing labels */
+    private static final String INFO_ICON_HTML =
+            "<span style='color: #336699; font-size: 12px;'>\u24D8</span>";
+
     private JSpinner addressDistanceSpinner;
     private JSpinner nodeVersionSpinner;
     private JSpinner nodePercentageSpinner;
@@ -85,200 +89,158 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
 
     @Override
     public void addGui(PreferenceTabbedPane gui) {
-        JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.anchor = GridBagConstraints.WEST;
+        JPanel outerPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints outerGbc = new GridBagConstraints();
+        outerGbc.gridx = 0;
+        outerGbc.fill = GridBagConstraints.HORIZONTAL;
+        outerGbc.weightx = 1.0;
+        outerGbc.insets = new Insets(2, 0, 2, 0);
 
+        // === Name Verification Section ===
+        JPanel namePanel = new JPanel(new GridBagLayout());
+        namePanel.setBorder(BorderFactory.createTitledBorder(tr("Name Verification")));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.anchor = GridBagConstraints.WEST;
         int row = 0;
 
-        // === Enable/Disable Checks Section ===
-        gbc.gridx = 0;
-        gbc.gridy = row++;
-        gbc.gridwidth = 3;
-        JLabel checksLabel = new JLabel(tr("Enable/Disable Checks:"));
-        checksLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
-        panel.add(checksLabel, gbc);
-
-        // Connected road check
-        gbc.gridy = row++;
-        gbc.gridwidth = 3;
-        connectedRoadCheckBox = new JCheckBox(tr("Connected road check (name corroboration via connected roads)"));
+        connectedRoadCheckBox = new JCheckBox(tr("Connected road check"));
+        connectedRoadCheckBox.setToolTipText(
+                tr("Corroborate road names using connected roads that share an endpoint and are not tiger:reviewed=no"));
         connectedRoadCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_CONNECTED_ROAD_CHECK, true));
-        panel.add(connectedRoadCheckBox, gbc);
+        addCheckBox(namePanel, gbc, row++, connectedRoadCheckBox);
 
-        // Address check
-        gbc.gridy = row++;
-        addressCheckBox = new JCheckBox(tr("Address check (name corroboration via nearby addr:street)"));
+        addressCheckBox = new JCheckBox(tr("Address check"));
+        addressCheckBox.setToolTipText(
+                tr("Corroborate road names using nearby addr:street tags within the matching distance"));
         addressCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_ADDRESS_CHECK, true));
-        panel.add(addressCheckBox, gbc);
+        addCheckBox(namePanel, gbc, row++, addressCheckBox);
 
-        // Node version check
-        gbc.gridy = row++;
-        nodeVersionCheckBox = new JCheckBox(tr("Node version check (alignment verification via node versions)"));
-        nodeVersionCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_NODE_VERSION_CHECK, true));
-        panel.add(nodeVersionCheckBox, gbc);
-
-        // NAD check
-        gbc.gridy = row++;
-        nadCheckBox = new JCheckBox(tr("NAD check (name corroboration via National Address Database - US only)"));
+        nadCheckBox = new JCheckBox(tr("NAD check (US only)"));
+        nadCheckBox.setToolTipText(
+                tr("Download addresses from the National Address Database for US areas. Must be enabled before downloading data."));
         nadCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_NAD_CHECK, false));
-        panel.add(nadCheckBox, gbc);
+        addCheckBox(namePanel, gbc, row++, nadCheckBox);
 
-        // === Fix Behavior Section ===
-        gbc.gridy = row++;
-        gbc.gridwidth = 3;
-        gbc.insets = new Insets(15, 5, 5, 5);
-        JLabel fixLabel = new JLabel(tr("Fix Behavior:"));
-        fixLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
-        panel.add(fixLabel, gbc);
-
-        gbc.insets = new Insets(5, 5, 5, 5);
-
-        // Strip all tiger: tags
-        gbc.gridy = row++;
-        stripTigerTagsCheckBox = new JCheckBox(tr("Strip all tiger:* tags when fully verified (not just tiger:reviewed)"));
-        stripTigerTagsCheckBox.setSelected(Config.getPref().getBoolean(PREF_STRIP_TIGER_TAGS, true));
-        panel.add(stripTigerTagsCheckBox, gbc);
-
-        // === Parameters Section ===
-        gbc.gridy = row++;
-        gbc.gridwidth = 3;
-        gbc.insets = new Insets(15, 5, 5, 5);
-        JLabel paramsLabel = new JLabel(tr("Check Parameters:"));
-        paramsLabel.setBorder(BorderFactory.createEmptyBorder(0, 0, 5, 0));
-        panel.add(paramsLabel, gbc);
-
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.gridwidth = 1;
-
-        // Address matching distance
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel(tr("Maximum address matching distance (meters):")), gbc);
-
-        gbc.gridx = 1;
         double currentDistance = Config.getPref().getDouble(PREF_ADDRESS_MAX_DISTANCE, DEFAULT_ADDRESS_MAX_DISTANCE);
         addressDistanceSpinner = new JSpinner(new SpinnerNumberModel(currentDistance, 10.0, 500.0, 10.0));
-        panel.add(addressDistanceSpinner, gbc);
+        addLabeledRow(namePanel, gbc, row++,
+                tr("Address matching distance (m):"), addressDistanceSpinner,
+                tr("(default: {0})", DEFAULT_ADDRESS_MAX_DISTANCE),
+                tr("Maximum distance to search for corroborating addr:street tags"));
 
-        gbc.gridx = 2;
-        gbc.weightx = 1.0;
-        panel.add(new JLabel(tr("(default: {0})", DEFAULT_ADDRESS_MAX_DISTANCE)), gbc);
-        gbc.weightx = 0;
+        double currentNadDistance = Config.getPref().getDouble(PREF_NAD_MAX_DISTANCE, DEFAULT_NAD_MAX_DISTANCE);
+        nadDistanceSpinner = new JSpinner(new SpinnerNumberModel(currentNadDistance, 10.0, 500.0, 10.0));
+        nadDistanceSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
+        addLabeledRow(namePanel, gbc, row++,
+                tr("NAD matching distance (m):"), nadDistanceSpinner,
+                tr("(default: {0})", DEFAULT_NAD_MAX_DISTANCE),
+                tr("Maximum distance to search for corroborating NAD addresses"));
 
-        row++;
+        outerGbc.gridy = 0;
+        outerPanel.add(namePanel, outerGbc);
 
-        // Node version threshold
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel(tr("Minimum average node version for alignment verification:")), gbc);
+        // === Alignment Verification Section ===
+        JPanel alignmentPanel = new JPanel(new GridBagLayout());
+        alignmentPanel.setBorder(BorderFactory.createTitledBorder(tr("Alignment Verification")));
+        gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        row = 0;
 
-        gbc.gridx = 1;
+        nodeVersionCheckBox = new JCheckBox(tr("Node version check"));
+        nodeVersionCheckBox.setToolTipText(
+                tr("Verify alignment by checking if nodes were edited by humans (not bots/importers)"));
+        nodeVersionCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_NODE_VERSION_CHECK, true));
+        addCheckBox(alignmentPanel, gbc, row++, nodeVersionCheckBox);
+
         double currentVersion = Config.getPref().getDouble(PREF_NODE_MIN_AVG_VERSION, DEFAULT_NODE_MIN_AVG_VERSION);
         nodeVersionSpinner = new JSpinner(new SpinnerNumberModel(currentVersion, 1.0, 5.0, 0.1));
         nodeVersionSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
-        panel.add(nodeVersionSpinner, gbc);
+        addLabeledRow(alignmentPanel, gbc, row++,
+                tr("Min average node version:"), nodeVersionSpinner,
+                tr("(default: {0})", DEFAULT_NODE_MIN_AVG_VERSION),
+                tr("Roads with average node version above this are considered alignment-verified"));
 
-        gbc.gridx = 2;
-        gbc.weightx = 1.0;
-        panel.add(new JLabel(tr("(default: {0})", DEFAULT_NODE_MIN_AVG_VERSION)), gbc);
-        gbc.weightx = 0;
-
-        row++;
-
-        // Node percentage edited threshold
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel(tr("Minimum percentage of nodes edited (0-100%):")), gbc);
-
-        gbc.gridx = 1;
         double currentPercentage = Config.getPref().getDouble(PREF_NODE_MIN_PERCENTAGE_EDITED, DEFAULT_NODE_MIN_PERCENTAGE_EDITED);
         // Display as percentage (0-100) but store as decimal (0.0-1.0)
         nodePercentageSpinner = new JSpinner(new SpinnerNumberModel(currentPercentage * 100, 0.0, 100.0, 5.0));
         nodePercentageSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
-        panel.add(nodePercentageSpinner, gbc);
+        addLabeledRow(alignmentPanel, gbc, row++,
+                tr("Min percentage of nodes edited:"), nodePercentageSpinner,
+                tr("(default: {0}%)", (int) (DEFAULT_NODE_MIN_PERCENTAGE_EDITED * 100)),
+                tr("Minimum percentage of nodes that must have been edited by humans"));
 
-        gbc.gridx = 2;
-        gbc.weightx = 1.0;
-        panel.add(new JLabel(tr("(default: {0}%)", (int)(DEFAULT_NODE_MIN_PERCENTAGE_EDITED * 100))), gbc);
-        gbc.weightx = 0;
-
-        row++;
-
-        // NAD address matching distance
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel(tr("NAD address matching distance (meters):")), gbc);
-
-        gbc.gridx = 1;
-        double currentNadDistance = Config.getPref().getDouble(PREF_NAD_MAX_DISTANCE, DEFAULT_NAD_MAX_DISTANCE);
-        nadDistanceSpinner = new JSpinner(new SpinnerNumberModel(currentNadDistance, 10.0, 500.0, 10.0));
-        nadDistanceSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
-        panel.add(nadDistanceSpinner, gbc);
-
-        gbc.gridx = 2;
-        gbc.weightx = 1.0;
-        panel.add(new JLabel(tr("(default: {0})", DEFAULT_NAD_MAX_DISTANCE)), gbc);
-        gbc.weightx = 0;
-
-        row++;
-
-        // Additional bot usernames
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel(tr("Additional bot/importer usernames:")), gbc);
-
-        gbc.gridx = 1;
         String currentBotUsernames = Config.getPref().get(PREF_ADDITIONAL_BOT_USERNAMES, "");
         additionalBotUsernamesField = new JTextField(currentBotUsernames, 20);
         additionalBotUsernamesField.setPreferredSize(addressDistanceSpinner.getPreferredSize());
-        panel.add(additionalBotUsernamesField, gbc);
+        addLabeledRow(alignmentPanel, gbc, row++,
+                tr("Additional bot usernames:"), additionalBotUsernamesField,
+                tr("(semicolon-separated)"),
+                tr("Edits by these users don''t count as human review. "
+                   + "Built-in: DaveHansenTiger, Milenko, woodpeck_fixbot, balrog-kun, bot-mode"));
 
-        gbc.gridx = 2;
+        outerGbc.gridy = 1;
+        outerPanel.add(alignmentPanel, outerGbc);
+
+        // === Fix Behavior Section ===
+        JPanel fixPanel = new JPanel(new GridBagLayout());
+        fixPanel.setBorder(BorderFactory.createTitledBorder(tr("Fix Behavior")));
+        gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        stripTigerTagsCheckBox = new JCheckBox(tr("Strip all tiger:* tags when fully verified"));
+        stripTigerTagsCheckBox.setToolTipText(
+                tr("Remove all tiger:* tags (cfcc, county, name_base, etc.) when fixing, not just tiger:reviewed"));
+        stripTigerTagsCheckBox.setSelected(Config.getPref().getBoolean(PREF_STRIP_TIGER_TAGS, true));
+        gbc.gridx = 0;
+        gbc.gridy = 0;
         gbc.weightx = 1.0;
-        panel.add(new JLabel(tr("(semicolon-separated)")), gbc);
+        fixPanel.add(stripTigerTagsCheckBox, gbc);
         gbc.weightx = 0;
 
-        row++;
-
-        // Explanatory text
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        gbc.gridwidth = 3;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(20, 5, 5, 5);
-        JLabel explanation = new JLabel("<html><body style='width: 400px'>" +
-                tr("<b>Address matching distance:</b> When checking if a road name is corroborated " +
-                   "by nearby addresses, only consider addresses within this distance of the road.") +
-                "<br><br>" +
-                tr("<b>Node version threshold:</b> Roads with average node version above this value " +
-                   "are considered to have verified alignment (nodes have been moved/edited).") +
-                "<br><br>" +
-                tr("<b>Percentage of nodes edited:</b> Roads where at least this percentage of nodes " +
-                   "have been edited (version > 1) are considered to have verified alignment.") +
-                "<br><br>" +
-                tr("<b>NAD check:</b> When enabled, downloads address data from the National Address Database " +
-                   "for US areas and uses it to corroborate road names. Data is fetched in the background " +
-                   "when a US dataset is loaded.") +
-                "<br><br>" +
-                tr("<b>Additional bot usernames:</b> Semicolon-separated list of additional usernames to treat " +
-                   "as bots/importers. Nodes last edited by these users won''t count toward alignment verification. " +
-                   "Built-in: DaveHansenTiger, Milenko, woodpeck_fixbot, balrog-kun, bot-mode.") +
-                "<br><br>" +
-                tr("<b>Strip all tiger:* tags:</b> When enabled, fixing a fully verified road removes all tags " +
-                   "starting with ''tiger:'' (e.g. tiger:cfcc, tiger:county, tiger:name_base), not just tiger:reviewed. " +
-                   "These tags are remnants of the original TIGER import and are generally no longer needed.") +
-                "</body></html>");
-        panel.add(explanation, gbc);
+        outerGbc.gridy = 2;
+        outerPanel.add(fixPanel, outerGbc);
 
         JPanel wrapper = new JPanel(new BorderLayout());
-        wrapper.add(panel, BorderLayout.NORTH);
+        wrapper.add(outerPanel, BorderLayout.NORTH);
         GridBagConstraints tabConstraints = new GridBagConstraints();
         tabConstraints.fill = GridBagConstraints.BOTH;
         tabConstraints.weightx = 1.0;
         tabConstraints.weighty = 1.0;
         gui.createPreferenceTab(this).add(wrapper, tabConstraints);
+    }
+
+    private static void addCheckBox(JPanel panel, GridBagConstraints gbc, int row, JCheckBox checkBox) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 4;
+        panel.add(checkBox, gbc);
+        gbc.gridwidth = 1;
+    }
+
+    private static void addLabeledRow(JPanel panel, GridBagConstraints gbc, int row,
+            String labelText, javax.swing.JComponent field, String defaultText, String tooltip) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 1;
+        gbc.weightx = 0;
+        panel.add(new JLabel(labelText), gbc);
+
+        gbc.gridx = 1;
+        panel.add(field, gbc);
+
+        gbc.gridx = 2;
+        panel.add(new JLabel(defaultText), gbc);
+
+        gbc.gridx = 3;
+        gbc.weightx = 1.0;
+        JLabel info = new JLabel("<html>" + INFO_ICON_HTML + "</html>");
+        info.setToolTipText(tooltip);
+        info.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+        panel.add(info, gbc);
+        gbc.weightx = 0;
     }
 
     @Override
