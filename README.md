@@ -1,179 +1,38 @@
-# TIGERReview JOSM Plugin
+<img width="1671" height="1041" alt="image" src="https://github.com/user-attachments/assets/95c7aa10-622a-4dcd-bca2-c862889fd926" />
 
-**Mascot:** ROAR the tiger (Review Of American Roads)
 
-A JOSM plugin to help mappers review TIGER-imported roadways in the United States. The plugin creates validator warnings for roads with `tiger:reviewed=no` and provides one-click fixes based on corroborating evidence.
+# TIGER R.O.A.R. (Review of American Roads)
 
-## Features
+A [JOSM](https://josm.openstreetmap.de/) plugin that does a lot of the heavy lifting for mappers perfroming [TIGER review](https://wiki.openstreetmap.org/wiki/TIGER_fixup). It looks for evidence that a road's name and geometry have already been verified by the community, even if nobody remembered to update the `tiger:reviewed` tag.
 
-- **Automatic name verification** via connected roads and nearby addresses
-- **Alignment verification** using node version heuristics
-- **Surface inference** from connected roads
-- **NAD integration** (opt-in) for external address corroboration
-- **One-click fixes** for roads with sufficient evidence
+Companion tool to [TIGERMap](https://watmildon.github.io/TIGERMap/).
 
-## Requirements
+## What it does
 
-### Build Environment
+**Name verification** - checks if connected roads or nearby addresses agree on the road name. TIGER ROAR can optionally query the ESRI [National Address Database](https://www.transportation.gov/gis/national-address-database) endpoint to corroborate road names. Enable it in **Preferences → TIGER ROAR** *before* downloading data, as the fetch triggers on layer load.
 
-| Component | Version | Notes |
-|-----------|---------|-------|
-| **JDK** | 17+ | Required for JOSM compatibility |
-| **Gradle** | 8.5 | Included via wrapper |
-| **JOSM** | 19439+ | Minimum compatible version |
 
-### Installing JDK
+**Alignment verification** - checks if the road's nodes have been moved or edited by humans (not just bots from the original import).
 
-**Windows:**
-- Download from [Adoptium](https://adoptium.net/) (recommended) or [Oracle JDK](https://www.oracle.com/java/technologies/downloads/)
-- Or use a package manager: `winget install EclipseAdoptium.Temurin.17.JDK`
 
-**macOS:**
-```bash
-brew install openjdk@17
-```
+**Surface inference** - if roads on both ends of an untagged road share the same `surface` value, ROAR suggests adding it.
 
-**Linux (Debian/Ubuntu):**
-```bash
-sudo apt install openjdk-17-jdk
-```
 
-Verify installation:
-```bash
-java -version
-# Should show version 17 or higher
-```
+## Installing
 
-## Building
-
-```bash
-# Compile only
-./gradlew compileJava --no-daemon
-
-# Full build (creates TIGERReview.jar)
-./gradlew build --no-daemon
-
-# Run JOSM with plugin loaded (for testing)
-./gradlew runJosm --no-daemon
-```
-
-### Installing the Plugin
-
-**macOS:**
-```bash
-./gradlew build --no-daemon && cp build/dist/TIGERReview.jar ~/Library/JOSM/plugins/
-```
-
-**Windows:**
-```bash
-./gradlew build --no-daemon && cp build/dist/TIGERReview.jar $APPDATA/JOSM/plugins/
-```
-
-**Linux:**
-```bash
-./gradlew build --no-daemon && cp build/dist/TIGERReview.jar ~/.local/share/JOSM/plugins/
-```
-
-### Troubleshooting
-
-If you encounter gradle errors about missing files:
-```bash
-rm -rf .gradle build
-./gradlew build --no-daemon
-```
+Download the latest jar from [Releases](https://github.com/watmildon/TIGER-ROAR/releases) and [manually install](https://wiki.openstreetmap.org/wiki/JOSM/Plugins#Manually_install_JOSM_plugins) it into your JOSM plugins folder.
 
 ## Usage
 
 1. Download a US area with TIGER data in JOSM
-2. Open the Validator panel (Alt+Shift+V)
-3. Click **Validate**
-4. Look for warnings starting with "TIGERReview -"
-5. Use the **Fix** button to apply suggested corrections
+2. Open the TIGER ROAR side panel (**Alt+Shift+T**) and click **Analyze**, or run the validator (**Alt+Shift+V**)
+3. Review the results — click any item to select the road on the map
+4. Use **Fix** or **Fix All** to apply corrections
 
-## Configuration
 
-Access settings via: **JOSM Preferences → Validator → TIGERReview**
+## Links
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Address max distance | 50m | Max distance for address matching |
-| Min average node version | 1.5 | Threshold for alignment verification |
-| Min % nodes edited | 80% | Alternative alignment threshold |
-| Connected road check | Enabled | Verify names via connected roads |
-| Address check | Enabled | Verify names via addr:street |
-| Node version check | Enabled | Verify alignment via node versions |
-| Surface check | Enabled | Suggest surface tags |
-| NAD check | **Disabled** | External API for address lookup |
-
-### NAD (National Address Database)
-
-The NAD check queries an external ESRI API for address corroboration. It is disabled by default and must be enabled **before** downloading data, as the fetch triggers on layer load.
-
-## How It Works
-
-### Evidence Types
-
-**Name Corroboration:**
-- Connected reviewed road has matching name
-- Nearby OSM address has matching `addr:street`
-- Nearby NAD address has matching street name (opt-in)
-
-**Alignment Verification:**
-- Road has `tiger:reviewed=position/alignment/yes`
-- All nodes have version > 1
-- 80%+ of nodes have version > 1
-- Average node version > 1.5
-
-### Decision Logic
-
-| Condition | Evidence Found | Action |
-|-----------|----------------|--------|
-| `tiger:reviewed=no` + named | Name + Alignment | Remove tag |
-| `tiger:reviewed=no` + named | Name only | Set `tiger:reviewed=name` |
-| `tiger:reviewed=no` + named | Alignment only | Set `tiger:reviewed=alignment` |
-| `tiger:reviewed=no` + unnamed | Alignment | Remove tag |
-| `tiger:reviewed=name` | Alignment | Remove tag |
-| Any road | Connected roads share surface | Suggest surface tag |
-
-## Testing
-
-A test file is provided at `test-data/tiger-review-test.osm`:
-
-1. Open JOSM
-2. File → Open → `test-data/tiger-review-test.osm`
-3. Open Validator panel (Alt+Shift+V)
-4. Click Validate
-5. Verify warnings match expected scenarios
-
-## Project Structure
-
-```
-src/main/java/org/openstreetmap/josm/plugins/tigerreview/
-├── TIGERReviewPlugin.java          # Entry point
-├── TIGERReviewTest.java            # Main validator logic
-├── TIGERReviewPreferences.java     # Settings UI
-├── checks/
-│   ├── ConnectedRoadCheck.java     # Name via connected roads
-│   ├── NodeVersionCheck.java       # Alignment via node versions
-│   ├── AddressCheck.java           # Name via OSM addresses
-│   ├── NadAddressCheck.java        # Name via NAD API
-│   └── SurfaceCheck.java           # Surface inference
-└── external/
-    ├── NadClient.java              # NAD API client
-    ├── NadDataCache.java           # Spatial cache
-    └── NadDataLoader.java          # Background loader
-```
-
-## References
-
-- [Key:tiger:reviewed](https://wiki.openstreetmap.org/wiki/Key:tiger:reviewed) - Tag documentation
-- [TIGER fixup](https://wiki.openstreetmap.org/wiki/TIGER_fixup) - Background on TIGER review
-- [NAD ESRI Endpoint](https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0) - National Address Database API
-
-## License
-
-This plugin is developed for the OpenStreetMap community.
-
-## Contributing
-
-Maintainer: [@watmildon](https://en.osm.town/@watmildon)
+* [TIGER fixup](https://wiki.openstreetmap.org/wiki/TIGER_fixup) - background on the TIGER review effort
+* [Key:tiger:reviewed](https://wiki.openstreetmap.org/wiki/Key:tiger:reviewed) - tag documentation
+* [TIGERMap](https://watmildon.github.io/TIGERMap/) - web map for finding unreviewed TIGER roads
+* [NAD ESRI endpoint](https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0) - National Address Database API
