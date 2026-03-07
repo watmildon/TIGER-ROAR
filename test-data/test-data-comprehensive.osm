@@ -1,0 +1,1771 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version='0.6' generator='TIGERReview Comprehensive Test Data'>
+
+  <!--
+    Comprehensive Test Data for TIGERReview JOSM Plugin
+    ===================================================
+
+    This file tests scenarios NOT covered by tiger-review-test.osm and
+    test-data-surface-validation.osm.  It focuses on:
+
+      A. Invalid / edge-case tiger:reviewed values
+      B. Residual tiger:* tag cleanup
+      C. Alignment-reviewed roads (aerial / position / alignment)
+      D. Connected-road corroboration trust rules
+      E. Highway type filtering (included and excluded)
+      F. Bot exclusion for all built-in bots
+      G. Alignment evidence bucket boundaries
+      H. Name / tag edge cases
+      I. Surface confidence tiers and non-vehicular filtering
+      J. Address check edge cases
+      K. Fully-verified decision matrix combinations
+      L. Two-node minimal ways
+
+    Load in JOSM and run the validator to test.
+
+    TESTING NOTE: Nodes can use these tags:
+    - __TEST_VERSION : Override node version
+    - __TEST_USER   : Override last editor username
+  -->
+
+
+  <!-- ================================================================ -->
+  <!-- A. INVALID / EDGE-CASE tiger:reviewed VALUES                     -->
+  <!-- ================================================================ -->
+
+
+  <!-- A1: tiger:reviewed=maybe (invalid value)
+       Expected: TIGER_REVIEWED_INVALID_VALUE (19939015), Severity.ERROR, no fix -->
+
+  <node id='-1001' lat='40.1000' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1002' lat='40.1005' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10001' version='1'>
+    <nd ref='-1001'/><nd ref='-1002'/>
+    <tag k='_test_id' v='A1'/>
+    <tag k='_test_note' v='Invalid tiger:reviewed=maybe. Expect TIGER_REVIEWED_INVALID_VALUE error with no fix.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Invalid Review Road'/>
+    <tag k='tiger:reviewed' v='maybe'/>
+  </way>
+
+
+  <!-- A2: tiger:reviewed=partial (another invalid value)
+       Expected: TIGER_REVIEWED_INVALID_VALUE (19939015), Severity.ERROR, no fix -->
+
+  <node id='-1011' lat='40.1010' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1012' lat='40.1015' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10002' version='1'>
+    <nd ref='-1011'/><nd ref='-1012'/>
+    <tag k='_test_id' v='A2'/>
+    <tag k='_test_note' v='Invalid tiger:reviewed=partial. Expect TIGER_REVIEWED_INVALID_VALUE error with no fix.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Partial Review Road'/>
+    <tag k='tiger:reviewed' v='partial'/>
+  </way>
+
+
+  <!-- A3: tiger:reviewed=Yes (case mismatch — "Yes" is NOT in VALID_REVIEWED_VALUES which has "yes")
+       Expected: TIGER_REVIEWED_INVALID_VALUE (19939015), Severity.ERROR, no fix -->
+
+  <node id='-1021' lat='40.1020' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1022' lat='40.1025' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10003' version='1'>
+    <nd ref='-1021'/><nd ref='-1022'/>
+    <tag k='_test_id' v='A3'/>
+    <tag k='_test_note' v='Case mismatch: tiger:reviewed=Yes (capital Y). Expect TIGER_REVIEWED_INVALID_VALUE.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Case Mismatch Road'/>
+    <tag k='tiger:reviewed' v='Yes'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- B. RESIDUAL tiger:* TAG CLEANUP                                  -->
+  <!-- ================================================================ -->
+
+
+  <!-- B1: tiger:reviewed=yes with residual tiger:county
+       Expected: TIGER_RESIDUAL_TAGS (19939014), fix removes all tiger:* tags -->
+
+  <node id='-1101' lat='40.1100' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+  <node id='-1102' lat='40.1105' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+
+  <way id='-10101' version='1'>
+    <nd ref='-1101'/><nd ref='-1102'/>
+    <tag k='_test_id' v='B1'/>
+    <tag k='_test_note' v='tiger:reviewed=yes with residual tiger:county. Expect TIGER_RESIDUAL_TAGS warning with fix.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Residual Tags Road Yes'/>
+    <tag k='tiger:reviewed' v='yes'/>
+    <tag k='tiger:county' v='Test County'/>
+  </way>
+
+
+  <!-- B2: No tiger:reviewed tag at all, but has tiger:name_base and tiger:zip_left
+       Expected: TIGER_RESIDUAL_TAGS (19939014), fix removes all tiger:* tags -->
+
+  <node id='-1111' lat='40.1110' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+  <node id='-1112' lat='40.1115' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+
+  <way id='-10102' version='1'>
+    <nd ref='-1111'/><nd ref='-1112'/>
+    <tag k='_test_id' v='B2'/>
+    <tag k='_test_note' v='No tiger:reviewed, but has tiger:name_base + tiger:zip_left. Expect TIGER_RESIDUAL_TAGS warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Residual Tags No Review'/>
+    <tag k='tiger:name_base' v='Test'/>
+    <tag k='tiger:zip_left' v='12345'/>
+  </way>
+
+
+  <!-- B3: tiger:reviewed=yes with MANY residual tiger tags
+       Expected: TIGER_RESIDUAL_TAGS (19939014), fix removes all non-discardable tiger:* tags -->
+
+  <node id='-1121' lat='40.1120' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+  <node id='-1122' lat='40.1125' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+
+  <way id='-10103' version='1'>
+    <nd ref='-1121'/><nd ref='-1122'/>
+    <tag k='_test_id' v='B3'/>
+    <tag k='_test_note' v='tiger:reviewed=yes with many tiger:* tags. Expect TIGER_RESIDUAL_TAGS. Fix should strip all.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Many Tiger Tags Road'/>
+    <tag k='tiger:reviewed' v='yes'/>
+    <tag k='tiger:county' v='Test County'/>
+    <tag k='tiger:name_base' v='Test'/>
+    <tag k='tiger:name_type' v='St'/>
+    <tag k='tiger:zip_left' v='12345'/>
+    <tag k='tiger:zip_right' v='12346'/>
+  </way>
+
+
+  <!-- B4: Negative — tiger:reviewed=yes with NO other tiger tags
+       Expected: NO warning (no residual tags to clean up; tiger:reviewed=yes is valid) -->
+
+  <node id='-1131' lat='40.1130' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+  <node id='-1132' lat='40.1135' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/></node>
+
+  <way id='-10104' version='1'>
+    <nd ref='-1131'/><nd ref='-1132'/>
+    <tag k='_test_id' v='B4'/>
+    <tag k='_test_note' v='tiger:reviewed=yes with no other tiger tags. Expect NO warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Clean Yes Road'/>
+    <tag k='tiger:reviewed' v='yes'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- C. ALIGNMENT-REVIEWED ROADS (aerial / position / alignment)      -->
+  <!-- ================================================================ -->
+
+
+  <!-- C1: tiger:reviewed=aerial, named, with connected road corroboration
+       Expected: Fully verified (name code), FixAction.REMOVE_TAG -->
+
+  <node id='-1201' lat='40.1200' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1202' lat='40.1205' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1203' lat='40.1210' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10201' version='1'>
+    <nd ref='-1201'/><nd ref='-1202'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Aerial Road'/>
+  </way>
+
+  <way id='-10202' version='1'>
+    <nd ref='-1202'/><nd ref='-1203'/>
+    <tag k='_test_id' v='C1'/>
+    <tag k='_test_note' v='tiger:reviewed=aerial with connected road corroboration. Expect fully verified, REMOVE_TAG.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Aerial Road'/>
+    <tag k='tiger:reviewed' v='aerial'/>
+  </way>
+
+
+  <!-- C2: tiger:reviewed=position, named, with connected road corroboration
+       Expected: Fully verified (name code), FixAction.REMOVE_TAG -->
+
+  <node id='-1211' lat='40.1220' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1212' lat='40.1225' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1213' lat='40.1230' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10211' version='1'>
+    <nd ref='-1211'/><nd ref='-1212'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Position Road'/>
+  </way>
+
+  <way id='-10212' version='1'>
+    <nd ref='-1212'/><nd ref='-1213'/>
+    <tag k='_test_id' v='C2'/>
+    <tag k='_test_note' v='tiger:reviewed=position with connected road corroboration. Expect fully verified, REMOVE_TAG.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Position Road'/>
+    <tag k='tiger:reviewed' v='position'/>
+  </way>
+
+
+  <!-- C3: tiger:reviewed=alignment, named, with connected road corroboration
+       Expected: Fully verified (name code), FixAction.REMOVE_TAG -->
+
+  <node id='-1221' lat='40.1240' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1222' lat='40.1245' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1223' lat='40.1250' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10221' version='1'>
+    <nd ref='-1221'/><nd ref='-1222'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Alignment Road'/>
+  </way>
+
+  <way id='-10222' version='1'>
+    <nd ref='-1222'/><nd ref='-1223'/>
+    <tag k='_test_id' v='C3'/>
+    <tag k='_test_note' v='tiger:reviewed=alignment with connected road corroboration. Expect fully verified, REMOVE_TAG.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Alignment Road'/>
+    <tag k='tiger:reviewed' v='alignment'/>
+  </way>
+
+
+  <!-- C4: tiger:reviewed=aerial, UNNAMED road
+       Expected: TIGER_UNNAMED_VERIFIED (19939005), FixAction.REMOVE_TAG -->
+
+  <node id='-1231' lat='40.1260' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1232' lat='40.1265' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10231' version='1'>
+    <nd ref='-1231'/><nd ref='-1232'/>
+    <tag k='_test_id' v='C4'/>
+    <tag k='_test_note' v='tiger:reviewed=aerial, unnamed road. Expect TIGER_UNNAMED_VERIFIED, REMOVE_TAG.'/>
+    <tag k='highway' v='service'/>
+    <tag k='tiger:reviewed' v='aerial'/>
+  </way>
+
+
+  <!-- C5: tiger:reviewed=position, named, NO name corroboration available
+       Expected: NO warning (alignment already recorded, name can't be verified) -->
+
+  <node id='-1241' lat='40.1280' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1242' lat='40.1285' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10241' version='1'>
+    <nd ref='-1241'/><nd ref='-1242'/>
+    <tag k='_test_id' v='C5'/>
+    <tag k='_test_note' v='tiger:reviewed=position, named, no corroboration. Expect NO warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Isolated Position Road'/>
+    <tag k='tiger:reviewed' v='position'/>
+  </way>
+
+
+  <!-- C6: tiger:reviewed=alignment, unnamed road
+       Expected: TIGER_UNNAMED_VERIFIED (19939005), FixAction.REMOVE_TAG -->
+
+  <node id='-1251' lat='40.1300' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1252' lat='40.1305' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10251' version='1'>
+    <nd ref='-1251'/><nd ref='-1252'/>
+    <tag k='_test_id' v='C6'/>
+    <tag k='_test_note' v='tiger:reviewed=alignment, unnamed. Expect TIGER_UNNAMED_VERIFIED, REMOVE_TAG.'/>
+    <tag k='highway' v='service'/>
+    <tag k='tiger:reviewed' v='alignment'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- D. CONNECTED-ROAD CORROBORATION TRUST RULES                      -->
+  <!-- ================================================================ -->
+
+
+  <!-- D1: Connected road has tiger:reviewed=yes — SHOULD corroborate
+       (NAME_VERIFIED_VALUES includes "yes") -->
+
+  <node id='-1301' lat='40.1400' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1302' lat='40.1405' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1303' lat='40.1410' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10301' version='1'>
+    <nd ref='-1301'/><nd ref='-1302'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Trust Yes Road'/>
+    <tag k='tiger:reviewed' v='yes'/>
+  </way>
+
+  <way id='-10302' version='1'>
+    <nd ref='-1302'/><nd ref='-1303'/>
+    <tag k='_test_id' v='D1'/>
+    <tag k='_test_note' v='Connected road has tiger:reviewed=yes. SHOULD corroborate name (ONE_END).'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Trust Yes Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- D2: Connected road has tiger:reviewed=name — SHOULD corroborate
+       (NAME_VERIFIED_VALUES includes "name") -->
+
+  <node id='-1311' lat='40.1420' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1312' lat='40.1425' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1313' lat='40.1430' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10311' version='1'>
+    <nd ref='-1311'/><nd ref='-1312'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Trust Name Road'/>
+    <tag k='tiger:reviewed' v='name'/>
+  </way>
+
+  <way id='-10312' version='1'>
+    <nd ref='-1312'/><nd ref='-1313'/>
+    <tag k='_test_id' v='D2'/>
+    <tag k='_test_note' v='Connected road has tiger:reviewed=name. SHOULD corroborate (ONE_END).'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Trust Name Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- D3: Connected road has tiger:reviewed=aerial — should NOT corroborate
+       ("aerial" is NOT in NAME_VERIFIED_VALUES: only "yes" and "name") -->
+
+  <node id='-1321' lat='40.1440' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1322' lat='40.1445' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1323' lat='40.1450' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10321' version='1'>
+    <nd ref='-1321'/><nd ref='-1322'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Untrusted Aerial Road'/>
+    <tag k='tiger:reviewed' v='aerial'/>
+  </way>
+
+  <way id='-10322' version='1'>
+    <nd ref='-1322'/><nd ref='-1323'/>
+    <tag k='_test_id' v='D3'/>
+    <tag k='_test_note' v='Connected road has tiger:reviewed=aerial. Should NOT corroborate name. Expect no name warning (no evidence at all = no warning).'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Untrusted Aerial Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- D4: Connected road has tiger:reviewed=position — should NOT corroborate
+       ("position" is NOT in NAME_VERIFIED_VALUES) -->
+
+  <node id='-1331' lat='40.1460' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1332' lat='40.1465' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1333' lat='40.1470' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10331' version='1'>
+    <nd ref='-1331'/><nd ref='-1332'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Untrusted Position Road'/>
+    <tag k='tiger:reviewed' v='position'/>
+  </way>
+
+  <way id='-10332' version='1'>
+    <nd ref='-1332'/><nd ref='-1333'/>
+    <tag k='_test_id' v='D4'/>
+    <tag k='_test_note' v='Connected road has tiger:reviewed=position. Should NOT corroborate name. Expect no warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Untrusted Position Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- D5: Connected "road" has no highway tag — should NOT corroborate -->
+
+  <node id='-1341' lat='40.1480' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1342' lat='40.1485' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1343' lat='40.1490' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10341' version='1'>
+    <nd ref='-1341'/><nd ref='-1342'/>
+    <tag k='name' v='No Highway Tag Road'/>
+    <tag k='building' v='yes'/>
+  </way>
+
+  <way id='-10342' version='1'>
+    <nd ref='-1342'/><nd ref='-1343'/>
+    <tag k='_test_id' v='D5'/>
+    <tag k='_test_note' v='Connected way has no highway tag. Should NOT corroborate. Expect no warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='No Highway Tag Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- D6: Connected road has highway=bus_stop (not in TIGER_HIGHWAYS) — should NOT corroborate -->
+
+  <node id='-1351' lat='40.1500' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1352' lat='40.1505' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1353' lat='40.1510' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10351' version='1'>
+    <nd ref='-1351'/><nd ref='-1352'/>
+    <tag k='highway' v='bus_stop'/>
+    <tag k='name' v='Bus Stop Lane'/>
+  </way>
+
+  <way id='-10352' version='1'>
+    <nd ref='-1352'/><nd ref='-1353'/>
+    <tag k='_test_id' v='D6'/>
+    <tag k='_test_note' v='Connected road has highway=bus_stop (not in TIGER_HIGHWAYS). Should NOT corroborate. Expect no warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Bus Stop Lane'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- E. HIGHWAY TYPE FILTERING                                        -->
+  <!-- ================================================================ -->
+
+
+  <!-- E1: highway=footway with tiger:reviewed=no — IS in TIGER_HIGHWAYS
+       With connected road corroboration, should produce name-verified warning.
+       Footway is NOT in SURFACE_HIGHWAYS so should NOT get surface warnings. -->
+
+  <node id='-1401' lat='40.1600' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1402' lat='40.1605' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1403' lat='40.1610' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10401' version='1'>
+    <nd ref='-1401'/><nd ref='-1402'/>
+    <tag k='highway' v='footway'/>
+    <tag k='name' v='Trail Path'/>
+  </way>
+
+  <way id='-10402' version='1'>
+    <nd ref='-1402'/><nd ref='-1403'/>
+    <tag k='_test_id' v='E1'/>
+    <tag k='_test_note' v='highway=footway with tiger:reviewed=no. Footway IS in TIGER_HIGHWAYS. Expect name corroboration warning.'/>
+    <tag k='highway' v='footway'/>
+    <tag k='name' v='Trail Path'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- E2: highway=cycleway with tiger:reviewed=no — IS in TIGER_HIGHWAYS -->
+
+  <node id='-1411' lat='40.1620' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1412' lat='40.1625' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1413' lat='40.1630' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10411' version='1'>
+    <nd ref='-1411'/><nd ref='-1412'/>
+    <tag k='highway' v='cycleway'/>
+    <tag k='name' v='Bike Trail'/>
+  </way>
+
+  <way id='-10412' version='1'>
+    <nd ref='-1412'/><nd ref='-1413'/>
+    <tag k='_test_id' v='E2'/>
+    <tag k='_test_note' v='highway=cycleway with tiger:reviewed=no. Cycleway IS in TIGER_HIGHWAYS. Expect name corroboration.'/>
+    <tag k='highway' v='cycleway'/>
+    <tag k='name' v='Bike Trail'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- E3: highway=motorway with tiger:reviewed=no — IS in TIGER_HIGHWAYS -->
+
+  <node id='-1421' lat='40.1640' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='5'/><tag k='__TEST_USER' v='mapper_highway'/>
+  </node>
+  <node id='-1422' lat='40.1645' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='mapper_highway'/>
+  </node>
+  <node id='-1423' lat='40.1650' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_highway'/>
+  </node>
+
+  <way id='-10421' version='1'>
+    <nd ref='-1421'/><nd ref='-1422'/><nd ref='-1423'/>
+    <tag k='_test_id' v='E3'/>
+    <tag k='_test_note' v='highway=motorway with tiger:reviewed=no, all nodes human-edited but no name. Expect TIGER_UNNAMED_VERIFIED.'/>
+    <tag k='highway' v='motorway'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- E4: highway=pedestrian with tiger:reviewed=no — IS in TIGER_HIGHWAYS -->
+
+  <node id='-1431' lat='40.1660' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='local_mapper'/>
+  </node>
+  <node id='-1432' lat='40.1665' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='local_mapper'/>
+  </node>
+
+  <way id='-10431' version='1'>
+    <nd ref='-1431'/><nd ref='-1432'/>
+    <tag k='_test_id' v='E4'/>
+    <tag k='_test_note' v='highway=pedestrian with tiger:reviewed=no, nodes human-edited. Expect TIGER_UNNAMED_VERIFIED.'/>
+    <tag k='highway' v='pedestrian'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- E5: Negative — no highway tag at all, with tiger:reviewed=no
+       Expected: NO warning (not a highway) -->
+
+  <node id='-1441' lat='40.1680' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1442' lat='40.1685' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10441' version='1'>
+    <nd ref='-1441'/><nd ref='-1442'/>
+    <tag k='_test_id' v='E5'/>
+    <tag k='_test_note' v='No highway tag. Even with tiger:reviewed=no, expect NO warning.'/>
+    <tag k='name' v='Not A Road'/>
+    <tag k='waterway' v='stream'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- E6: highway=track with tiger:reviewed=no — IS in TIGER_HIGHWAYS -->
+
+  <node id='-1451' lat='40.1700' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='farm_mapper'/>
+  </node>
+  <node id='-1452' lat='40.1705' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='farm_mapper'/>
+  </node>
+
+  <way id='-10451' version='1'>
+    <nd ref='-1451'/><nd ref='-1452'/>
+    <tag k='_test_id' v='E6'/>
+    <tag k='_test_note' v='highway=track with tiger:reviewed=no, human-edited. Expect TIGER_UNNAMED_VERIFIED.'/>
+    <tag k='highway' v='track'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- E7: highway=primary_link with tiger:reviewed=no and name corroboration -->
+
+  <node id='-1461' lat='40.1720' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1462' lat='40.1725' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1463' lat='40.1730' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10461' version='1'>
+    <nd ref='-1461'/><nd ref='-1462'/>
+    <tag k='highway' v='primary_link'/>
+    <tag k='name' v='Link Ramp'/>
+  </way>
+
+  <way id='-10462' version='1'>
+    <nd ref='-1462'/><nd ref='-1463'/>
+    <tag k='_test_id' v='E7'/>
+    <tag k='_test_note' v='highway=primary_link with connected road corroboration. Expect name verified ONE_END.'/>
+    <tag k='highway' v='primary_link'/>
+    <tag k='name' v='Link Ramp'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- F. BOT EXCLUSION FOR ALL BUILT-IN BOTS                          -->
+  <!-- ================================================================ -->
+
+
+  <!-- F1: All nodes by Milenko (Pennsylvania importer) — should NOT count as edited -->
+
+  <node id='-1501' lat='40.1800' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='Milenko'/>
+  </node>
+  <node id='-1502' lat='40.1805' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='Milenko'/>
+  </node>
+  <node id='-1503' lat='40.1810' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='Milenko'/>
+  </node>
+
+  <way id='-10501' version='1'>
+    <nd ref='-1501'/><nd ref='-1502'/><nd ref='-1503'/>
+    <tag k='_test_id' v='F1'/>
+    <tag k='_test_note' v='All nodes by Milenko (PA importer). Should NOT count as human-edited. Expect no alignment warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Milenko Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- F2: All nodes by balrog-kun (abbreviation expansion bot) — should NOT count as edited -->
+
+  <node id='-1511' lat='40.1820' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='balrog-kun'/>
+  </node>
+  <node id='-1512' lat='40.1825' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='balrog-kun'/>
+  </node>
+  <node id='-1513' lat='40.1830' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='balrog-kun'/>
+  </node>
+
+  <way id='-10511' version='1'>
+    <nd ref='-1511'/><nd ref='-1512'/><nd ref='-1513'/>
+    <tag k='_test_id' v='F2'/>
+    <tag k='_test_note' v='All nodes by balrog-kun (abbrev bot). Should NOT count as human-edited. Expect no alignment warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Balrog Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- F3: All nodes by bot-mode (abbreviation expansion bot) — should NOT count as edited -->
+
+  <node id='-1521' lat='40.1840' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='bot-mode'/>
+  </node>
+  <node id='-1522' lat='40.1845' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='bot-mode'/>
+  </node>
+  <node id='-1523' lat='40.1850' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='bot-mode'/>
+  </node>
+
+  <way id='-10521' version='1'>
+    <nd ref='-1521'/><nd ref='-1522'/><nd ref='-1523'/>
+    <tag k='_test_id' v='F3'/>
+    <tag k='_test_note' v='All nodes by bot-mode (abbrev bot). Should NOT count as human-edited. Expect no alignment warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Bot Mode Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- F4: Mixed — 2 human, 1 DaveHansenTiger out of 3 (66%, below 80% threshold)
+       Should NOT trigger alignment. -->
+
+  <node id='-1531' lat='40.1860' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='human_mapper'/>
+  </node>
+  <node id='-1532' lat='40.1865' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-1533' lat='40.1870' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='human_mapper'/>
+  </node>
+
+  <way id='-10531' version='1'>
+    <nd ref='-1531'/><nd ref='-1532'/><nd ref='-1533'/>
+    <tag k='_test_id' v='F4'/>
+    <tag k='_test_note' v='2/3 human (66%), 1 DaveHansenTiger. Below 80% threshold. Expect no alignment warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Mixed Dave Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- G. ALIGNMENT EVIDENCE BUCKET BOUNDARIES                         -->
+  <!-- ================================================================ -->
+
+
+  <!-- G1: Exactly 80% human-edited (4 of 5) — should trigger at "80+"
+       Expected: TIGER_NAME_NOT_CORROBORATED (19939003), SET_ALIGNMENT_REVIEWED -->
+
+  <node id='-1601' lat='40.2000' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g1'/>
+  </node>
+  <node id='-1602' lat='40.2002' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_g1'/>
+  </node>
+  <node id='-1603' lat='40.2004' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g1'/>
+  </node>
+  <node id='-1604' lat='40.2006' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_g1'/>
+  </node>
+  <node id='-1605' lat='40.2008' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+
+  <way id='-10601' version='1'>
+    <nd ref='-1601'/><nd ref='-1602'/><nd ref='-1603'/><nd ref='-1604'/><nd ref='-1605'/>
+    <tag k='_test_id' v='G1'/>
+    <tag k='_test_note' v='4/5 human-edited (80%). Should trigger HIGH_PERCENTAGE_EDITED at bucket "80+". Expect alignment-only warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Eighty Percent Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- G2: 95% human-edited (19 of 20) — should trigger at "95+"
+       Expected: alignment verified at 95+ bucket -->
+
+  <node id='-1611' lat='40.2020' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1612' lat='40.2021' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1613' lat='40.2022' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1614' lat='40.2023' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1615' lat='40.2024' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1616' lat='40.2025' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1617' lat='40.2026' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1618' lat='40.2027' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1619' lat='40.2028' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1620' lat='40.2029' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1621' lat='40.2030' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1622' lat='40.2031' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1623' lat='40.2032' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1624' lat='40.2033' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1625' lat='40.2034' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1626' lat='40.2035' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1627' lat='40.2036' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1628' lat='40.2037' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1629' lat='40.2038' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g2'/>
+  </node>
+  <node id='-1630' lat='40.2039' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+
+  <way id='-10611' version='1'>
+    <nd ref='-1611'/><nd ref='-1612'/><nd ref='-1613'/><nd ref='-1614'/><nd ref='-1615'/>
+    <nd ref='-1616'/><nd ref='-1617'/><nd ref='-1618'/><nd ref='-1619'/><nd ref='-1620'/>
+    <nd ref='-1621'/><nd ref='-1622'/><nd ref='-1623'/><nd ref='-1624'/><nd ref='-1625'/>
+    <nd ref='-1626'/><nd ref='-1627'/><nd ref='-1628'/><nd ref='-1629'/><nd ref='-1630'/>
+    <tag k='_test_id' v='G2'/>
+    <tag k='_test_note' v='19/20 human-edited (95%). Should trigger HIGH_PERCENTAGE_EDITED at bucket "95+". Expect alignment-only warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Ninety Five Percent Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- G3: 90% human-edited (9 of 10) — should trigger at "90+"
+       Expected: alignment verified at 90+ bucket -->
+
+  <node id='-1641' lat='40.2060' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1642' lat='40.2062' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1643' lat='40.2064' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1644' lat='40.2066' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1645' lat='40.2068' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1646' lat='40.2070' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1647' lat='40.2072' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1648' lat='40.2074' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1649' lat='40.2076' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_g3'/>
+  </node>
+  <node id='-1650' lat='40.2078' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <way id='-10621' version='1'>
+    <nd ref='-1641'/><nd ref='-1642'/><nd ref='-1643'/><nd ref='-1644'/><nd ref='-1645'/>
+    <nd ref='-1646'/><nd ref='-1647'/><nd ref='-1648'/><nd ref='-1649'/><nd ref='-1650'/>
+    <tag k='_test_id' v='G3'/>
+    <tag k='_test_note' v='9/10 human-edited (90%). Should trigger HIGH_PERCENTAGE_EDITED at bucket "90+". Expect alignment-only warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Ninety Percent Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- H. NAME / TAG EDGE CASES                                        -->
+  <!-- ================================================================ -->
+
+
+  <!-- H1: Empty name tag (name="") — treated as unnamed
+       Expected: If alignment verified, TIGER_UNNAMED_VERIFIED -->
+
+  <node id='-1701' lat='40.2200' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='real_mapper'/>
+  </node>
+  <node id='-1702' lat='40.2205' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='real_mapper'/>
+  </node>
+
+  <way id='-10701' version='1'>
+    <nd ref='-1701'/><nd ref='-1702'/>
+    <tag k='_test_id' v='H1'/>
+    <tag k='_test_note' v='name="" (empty string). Treated as unnamed. With alignment OK, expect TIGER_UNNAMED_VERIFIED.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v=''/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- H2: Address check with case-insensitive matching
+       Road name "MAPLE AVENUE" with addr:street "Maple Avenue"
+       Expected: name corroboration via address -->
+
+  <node id='-1711' lat='40.2220' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1712' lat='40.2225' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <node id='-1713' lat='40.22225' lon='-74.9999'>
+    <tag k='addr:housenumber' v='456'/>
+    <tag k='addr:street' v='Maple Avenue'/>
+  </node>
+
+  <way id='-10711' version='1'>
+    <nd ref='-1711'/><nd ref='-1712'/>
+    <tag k='_test_id' v='H2'/>
+    <tag k='_test_note' v='Road name "MAPLE AVENUE" with nearby addr:street "Maple Avenue". Expect name corroborated via address (case-insensitive).'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='MAPLE AVENUE'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- H3: Road with tiger:reviewed=no but NO connected roads, NO addresses, NO alignment
+       Expected: NO warning at all (no evidence = no warning) -->
+
+  <node id='-1721' lat='40.2240' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1722' lat='40.2245' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10721' version='1'>
+    <nd ref='-1721'/><nd ref='-1722'/>
+    <tag k='_test_id' v='H3'/>
+    <tag k='_test_note' v='tiger:reviewed=no, named, but zero evidence of any kind. Expect NO warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Completely Isolated Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- H4: Road with tiger:reviewed=no, unnamed, NO alignment evidence
+       Expected: NO warning (unnamed + no alignment = no warning) -->
+
+  <node id='-1731' lat='40.2260' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-1732' lat='40.2265' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <way id='-10731' version='1'>
+    <nd ref='-1731'/><nd ref='-1732'/>
+    <tag k='_test_id' v='H4'/>
+    <tag k='_test_note' v='Unnamed, tiger:reviewed=no, all nodes by importer. Expect NO warning.'/>
+    <tag k='highway' v='service'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- I. SURFACE CONFIDENCE TIERS AND NON-VEHICULAR FILTERING          -->
+  <!-- ================================================================ -->
+
+
+  <!-- I1: Surface from footway should NOT be used for SURFACE_HIGHWAYS check
+       Footway with surface connected to residential without surface.
+       The residential should NOT get a surface suggestion from the footway.
+       (footway is NOT in SURFACE_HIGHWAYS, so getValidSurface returns null) -->
+
+  <node id='-1801' lat='40.2400' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1802' lat='40.2405' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1803' lat='40.2410' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10801' version='1'>
+    <nd ref='-1801'/><nd ref='-1802'/>
+    <tag k='highway' v='footway'/>
+    <tag k='name' v='Foot Path'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <way id='-10802' version='1'>
+    <nd ref='-1802'/><nd ref='-1803'/>
+    <tag k='_test_id' v='I1'/>
+    <tag k='_test_note' v='Connected road is a footway (not in SURFACE_HIGHWAYS). Residential should NOT get surface suggestion from footway.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Foot Path'/>
+  </way>
+
+
+  <!-- I2: Surface MEDIUM confidence — both ends match surface, but connected via
+       different-name roads (fallback, not endpointOfSameRoad) -->
+
+  <node id='-1811' lat='40.2420' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1812' lat='40.2425' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1813' lat='40.2430' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1814' lat='40.2435' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10811' version='1'>
+    <nd ref='-1811'/><nd ref='-1812'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Cross Street West'/>
+    <tag k='surface' v='concrete'/>
+  </way>
+
+  <way id='-10812' version='1'>
+    <nd ref='-1812'/><nd ref='-1813'/>
+    <tag k='_test_id' v='I2'/>
+    <tag k='_test_note' v='Both ends connected to roads with concrete, but different names. Expect MEDIUM confidence surface=concrete.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Gap Road'/>
+  </way>
+
+  <way id='-10813' version='1'>
+    <nd ref='-1813'/><nd ref='-1814'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Cross Street East'/>
+    <tag k='surface' v='concrete'/>
+  </way>
+
+
+  <!-- I3: Surface HIGH confidence — both ends connect to same-name+highway roads at their endpoints -->
+
+  <node id='-1821' lat='40.2440' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1822' lat='40.2445' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1823' lat='40.2450' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1824' lat='40.2455' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10821' version='1'>
+    <nd ref='-1821'/><nd ref='-1822'/>
+    <tag k='highway' v='tertiary'/>
+    <tag k='name' v='Continuous Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <way id='-10822' version='1'>
+    <nd ref='-1822'/><nd ref='-1823'/>
+    <tag k='_test_id' v='I3'/>
+    <tag k='_test_note' v='Same name+highway at both ends, both endpoint connections. Expect HIGH confidence surface=asphalt.'/>
+    <tag k='highway' v='tertiary'/>
+    <tag k='name' v='Continuous Road'/>
+  </way>
+
+  <way id='-10823' version='1'>
+    <nd ref='-1823'/><nd ref='-1824'/>
+    <tag k='highway' v='tertiary'/>
+    <tag k='name' v='Continuous Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+
+  <!-- I4: Surface LOW confidence — only one end connected to road with surface -->
+
+  <node id='-1831' lat='40.2460' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1832' lat='40.2465' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1833' lat='40.2470' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10831' version='1'>
+    <nd ref='-1831'/><nd ref='-1832'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Dead End Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+  <way id='-10832' version='1'>
+    <nd ref='-1832'/><nd ref='-1833'/>
+    <tag k='_test_id' v='I4'/>
+    <tag k='_test_note' v='Only west end has surface (gravel). East end has no connections. Expect LOW confidence surface=gravel.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Dead End Road'/>
+  </way>
+
+
+  <!-- I5: Surface upgrade — paved → asphalt (same category)
+       Road with surface=paved, connected roads have asphalt at both ends -->
+
+  <node id='-1841' lat='40.2480' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1842' lat='40.2485' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1843' lat='40.2490' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1844' lat='40.2495' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10841' version='1'>
+    <nd ref='-1841'/><nd ref='-1842'/>
+    <tag k='highway' v='tertiary'/>
+    <tag k='name' v='Upgrade Paved Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <way id='-10842' version='1'>
+    <nd ref='-1842'/><nd ref='-1843'/>
+    <tag k='_test_id' v='I5'/>
+    <tag k='_test_note' v='Has surface=paved. Connected roads have asphalt. Expect SURFACE_UPGRADE_BOTH_ENDS paved→asphalt.'/>
+    <tag k='highway' v='tertiary'/>
+    <tag k='name' v='Upgrade Paved Road'/>
+    <tag k='surface' v='paved'/>
+  </way>
+
+  <way id='-10843' version='1'>
+    <nd ref='-1843'/><nd ref='-1844'/>
+    <tag k='highway' v='tertiary'/>
+    <tag k='name' v='Upgrade Paved Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+
+  <!-- I6: Surface upgrade — unpaved → gravel (same category) -->
+
+  <node id='-1851' lat='40.2500' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1852' lat='40.2505' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1853' lat='40.2510' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1854' lat='40.2515' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10851' version='1'>
+    <nd ref='-1851'/><nd ref='-1852'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Upgrade Unpaved Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+  <way id='-10852' version='1'>
+    <nd ref='-1852'/><nd ref='-1853'/>
+    <tag k='_test_id' v='I6'/>
+    <tag k='_test_note' v='Has surface=unpaved. Connected roads have gravel. Expect SURFACE_UPGRADE_BOTH_ENDS unpaved→gravel.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Upgrade Unpaved Road'/>
+    <tag k='surface' v='unpaved'/>
+  </way>
+
+  <way id='-10853' version='1'>
+    <nd ref='-1853'/><nd ref='-1854'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Upgrade Unpaved Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+
+  <!-- I7: Negative — surface=paved but connected roads have gravel (wrong category)
+       paved → gravel is NOT a valid upgrade (gravel is unpaved category)
+       Expected: NO surface suggestion -->
+
+  <node id='-1861' lat='40.2520' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1862' lat='40.2525' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1863' lat='40.2530' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1864' lat='40.2535' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10861' version='1'>
+    <nd ref='-1861'/><nd ref='-1862'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Cross Category Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+  <way id='-10862' version='1'>
+    <nd ref='-1862'/><nd ref='-1863'/>
+    <tag k='_test_id' v='I7'/>
+    <tag k='_test_note' v='Has surface=paved. Connected roads have gravel (unpaved category). Should NOT suggest cross-category upgrade.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Cross Category Road'/>
+    <tag k='surface' v='paved'/>
+  </way>
+
+  <way id='-10863' version='1'>
+    <nd ref='-1863'/><nd ref='-1864'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Cross Category Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+
+  <!-- I8: Negative — surface=unpaved but connected roads have asphalt (wrong category)
+       unpaved → asphalt is NOT a valid upgrade (asphalt is paved category)
+       Expected: NO surface suggestion -->
+
+  <node id='-1871' lat='40.2540' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1872' lat='40.2545' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1873' lat='40.2550' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1874' lat='40.2555' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10871' version='1'>
+    <nd ref='-1871'/><nd ref='-1872'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Reverse Cross Category'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <way id='-10872' version='1'>
+    <nd ref='-1872'/><nd ref='-1873'/>
+    <tag k='_test_id' v='I8'/>
+    <tag k='_test_note' v='Has surface=unpaved. Connected roads have asphalt (paved category). Should NOT suggest cross-category upgrade.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Reverse Cross Category'/>
+    <tag k='surface' v='unpaved'/>
+  </way>
+
+  <way id='-10873' version='1'>
+    <nd ref='-1873'/><nd ref='-1874'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Reverse Cross Category'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+
+  <!-- I9: Surface check on highway=path (NOT in SURFACE_HIGHWAYS)
+       Expected: NO surface suggestion for the path -->
+
+  <node id='-1881' lat='40.2560' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1882' lat='40.2565' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1883' lat='40.2570' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1884' lat='40.2575' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-10881' version='1'>
+    <nd ref='-1881'/><nd ref='-1882'/>
+    <tag k='highway' v='residential'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <way id='-10882' version='1'>
+    <nd ref='-1882'/><nd ref='-1883'/>
+    <tag k='_test_id' v='I9'/>
+    <tag k='_test_note' v='highway=path is NOT in SURFACE_HIGHWAYS. Should NOT get surface suggestion.'/>
+    <tag k='highway' v='path'/>
+  </way>
+
+  <way id='-10883' version='1'>
+    <nd ref='-1883'/><nd ref='-1884'/>
+    <tag k='highway' v='residential'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- J. ADDRESS CHECK EDGE CASES                                      -->
+  <!-- ================================================================ -->
+
+
+  <!-- J1: Multiple addresses near a road — one matches, others don't
+       Expected: Name corroborated via address -->
+
+  <node id='-1901' lat='40.2700' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1902' lat='40.2705' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <!-- Matching address -->
+  <node id='-1903' lat='40.27025' lon='-74.9999'>
+    <tag k='addr:housenumber' v='100'/>
+    <tag k='addr:street' v='Elm Boulevard'/>
+  </node>
+  <!-- Non-matching address -->
+  <node id='-1904' lat='40.27025' lon='-74.99985'>
+    <tag k='addr:housenumber' v='200'/>
+    <tag k='addr:street' v='Other Boulevard'/>
+  </node>
+
+  <way id='-10901' version='1'>
+    <nd ref='-1901'/><nd ref='-1902'/>
+    <tag k='_test_id' v='J1'/>
+    <tag k='_test_note' v='One matching and one non-matching address nearby. Expect name corroborated via address.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Elm Boulevard'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- J2: Address far away (>50m default threshold) — should NOT match -->
+
+  <node id='-1911' lat='40.2720' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-1912' lat='40.2725' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <!-- Address 200m+ away -->
+  <node id='-1913' lat='40.2740' lon='-75.1000'>
+    <tag k='addr:housenumber' v='300'/>
+    <tag k='addr:street' v='Far Away Road'/>
+  </node>
+
+  <way id='-10911' version='1'>
+    <nd ref='-1911'/><nd ref='-1912'/>
+    <tag k='_test_id' v='J2'/>
+    <tag k='_test_note' v='Address is too far away (>50m). Should NOT corroborate. Expect no warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Far Away Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- K. FULLY-VERIFIED DECISION MATRIX COMBINATIONS                   -->
+  <!-- ================================================================ -->
+
+
+  <!-- K1: Name at BOTH ENDS + alignment ALL_NODES_EDITED = fully verified, REMOVE_TAG -->
+
+  <node id='-2001' lat='40.3000' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_k1'/>
+  </node>
+  <node id='-2002' lat='40.3005' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='mapper_k1'/>
+  </node>
+  <node id='-2003' lat='40.3010' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_k1'/>
+  </node>
+  <node id='-2004' lat='40.3015' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_k1'/>
+  </node>
+
+  <way id='-20001' version='1'>
+    <nd ref='-2001'/><nd ref='-2002'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Full Verify Both Road'/>
+  </way>
+
+  <way id='-20002' version='1'>
+    <nd ref='-2002'/><nd ref='-2003'/>
+    <tag k='_test_id' v='K1'/>
+    <tag k='_test_note' v='Name corroborated at BOTH ends + all nodes human-edited = FULLY VERIFIED, REMOVE_TAG.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Full Verify Both Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <way id='-20003' version='1'>
+    <nd ref='-2003'/><nd ref='-2004'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Full Verify Both Road'/>
+  </way>
+
+
+  <!-- K2: Name at ONE END + alignment HIGH_PERCENTAGE_EDITED = fully verified, REMOVE_TAG -->
+
+  <node id='-2011' lat='40.3020' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_k2'/>
+  </node>
+  <node id='-2012' lat='40.3025' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_k2'/>
+  </node>
+  <node id='-2013' lat='40.3027' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_k2'/>
+  </node>
+  <node id='-2014' lat='40.3029' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_k2'/>
+  </node>
+  <node id='-2015' lat='40.3030' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <way id='-20011' version='1'>
+    <nd ref='-2011'/><nd ref='-2012'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Full Verify One End Road'/>
+  </way>
+
+  <way id='-20012' version='1'>
+    <nd ref='-2012'/><nd ref='-2013'/><nd ref='-2014'/><nd ref='-2015'/>
+    <tag k='_test_id' v='K2'/>
+    <tag k='_test_note' v='Name at one end + 80% nodes human-edited (3/4 excl. shared node? Actually 4/5 total = 80%) = FULLY VERIFIED, REMOVE_TAG.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Full Verify One End Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- K3: Name corroborated via address + alignment = fully verified, REMOVE_TAG -->
+
+  <node id='-2021' lat='40.3040' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_k3'/>
+  </node>
+  <node id='-2022' lat='40.3045' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='mapper_k3'/>
+  </node>
+
+  <!-- Matching address -->
+  <node id='-2023' lat='40.30425' lon='-74.9999'>
+    <tag k='addr:housenumber' v='789'/>
+    <tag k='addr:street' v='Address Verified Street'/>
+  </node>
+
+  <way id='-20021' version='1'>
+    <nd ref='-2021'/><nd ref='-2022'/>
+    <tag k='_test_id' v='K3'/>
+    <tag k='_test_note' v='Name corroborated by nearby address + all nodes human-edited = FULLY VERIFIED, REMOVE_TAG.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Address Verified Street'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- K4: Name corroborated at one end, NO alignment = name-only, SET_NAME_REVIEWED -->
+
+  <node id='-2031' lat='40.3060' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-2032' lat='40.3065' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-2033' lat='40.3070' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <way id='-20031' version='1'>
+    <nd ref='-2031'/><nd ref='-2032'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Name Only Road'/>
+  </way>
+
+  <way id='-20032' version='1'>
+    <nd ref='-2032'/><nd ref='-2033'/>
+    <tag k='_test_id' v='K4'/>
+    <tag k='_test_note' v='Name at one end but ALL nodes by DaveHansenTiger (no alignment). Expect SET_NAME_REVIEWED.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Name Only Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- K5: NO name corroboration, alignment verified = alignment only, SET_ALIGNMENT_REVIEWED -->
+
+  <node id='-2041' lat='40.3080' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='5'/><tag k='__TEST_USER' v='expert_mapper'/>
+  </node>
+  <node id='-2042' lat='40.3085' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='expert_mapper'/>
+  </node>
+  <node id='-2043' lat='40.3090' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='expert_mapper'/>
+  </node>
+
+  <way id='-20041' version='1'>
+    <nd ref='-2041'/><nd ref='-2042'/><nd ref='-2043'/>
+    <tag k='_test_id' v='K5'/>
+    <tag k='_test_note' v='Named road, all human-edited, but no connected road with same name. Expect SET_ALIGNMENT_REVIEWED.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Lonely Named Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- L. MINIMAL GEOMETRY (TWO-NODE WAYS)                              -->
+  <!-- ================================================================ -->
+
+
+  <!-- L1: Minimal 2-node way with tiger:reviewed=no, both nodes human-edited
+       Expected: TIGER_UNNAMED_VERIFIED (unnamed service road) -->
+
+  <node id='-2101' lat='40.3200' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='5'/><tag k='__TEST_USER' v='mapper_l1'/>
+  </node>
+  <node id='-2102' lat='40.3205' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_l1'/>
+  </node>
+
+  <way id='-20101' version='1'>
+    <nd ref='-2101'/><nd ref='-2102'/>
+    <tag k='_test_id' v='L1'/>
+    <tag k='_test_note' v='Minimal 2-node unnamed way, both human-edited. Expect TIGER_UNNAMED_VERIFIED.'/>
+    <tag k='highway' v='service'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- L2: Minimal 2-node way with name corroboration at both ends
+       (first node shared with reviewed road, last node shared with reviewed road) -->
+
+  <node id='-2111' lat='40.3220' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2112' lat='40.3225' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2113' lat='40.3215' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2114' lat='40.3230' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-20111' version='1'>
+    <nd ref='-2113'/><nd ref='-2111'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Tiny Street'/>
+  </way>
+
+  <way id='-20112' version='1'>
+    <nd ref='-2111'/><nd ref='-2112'/>
+    <tag k='_test_id' v='L2'/>
+    <tag k='_test_note' v='Minimal 2-node way with name corroboration at both ends. Expect TIGER_NAME_VERIFIED_BOTH_ENDS.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Tiny Street'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <way id='-20113' version='1'>
+    <nd ref='-2112'/><nd ref='-2114'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Tiny Street'/>
+  </way>
+
+
+  <!-- L3: Minimal 2-node way, both nodes version 1 by importer, no name
+       Expected: NO warning (unnamed, no alignment evidence) -->
+
+  <node id='-2121' lat='40.3240' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-2122' lat='40.3245' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <way id='-20121' version='1'>
+    <nd ref='-2121'/><nd ref='-2122'/>
+    <tag k='_test_id' v='L3'/>
+    <tag k='_test_note' v='Minimal 2-node way, both importer nodes, unnamed. Expect NO warning.'/>
+    <tag k='highway' v='service'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- M. TIGER_NAME_REVIEWED (tiger:reviewed=name) EDGE CASES          -->
+  <!-- ================================================================ -->
+
+
+  <!-- M1: tiger:reviewed=name, all nodes bot-edited — should NOT upgrade
+       Expected: NO warning (alignment not verified) -->
+
+  <node id='-2201' lat='40.3400' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+  <node id='-2202' lat='40.3405' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='woodpeck_fixbot'/>
+  </node>
+
+  <way id='-20201' version='1'>
+    <nd ref='-2201'/><nd ref='-2202'/>
+    <tag k='_test_id' v='M1'/>
+    <tag k='_test_note' v='tiger:reviewed=name, all nodes bot-edited. Alignment NOT verified. Expect NO warning (no upgrade).'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Stuck At Name Road'/>
+    <tag k='tiger:reviewed' v='name'/>
+  </way>
+
+
+  <!-- M2: tiger:reviewed=name with high version fallback (v3+ nodes, no user)
+       Expected: TIGER_NAME_UPGRADE (19939006), REMOVE_TAG -->
+
+  <node id='-2211' lat='40.3420' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/>
+  </node>
+  <node id='-2212' lat='40.3425' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/>
+  </node>
+  <node id='-2213' lat='40.3430' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='5'/>
+  </node>
+
+  <way id='-20211' version='1'>
+    <nd ref='-2211'/><nd ref='-2212'/><nd ref='-2213'/>
+    <tag k='_test_id' v='M2'/>
+    <tag k='_test_note' v='tiger:reviewed=name, nodes v3-5 (no user, high version fallback). Expect TIGER_NAME_UPGRADE, REMOVE_TAG.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Version Fallback Upgrade Road'/>
+    <tag k='tiger:reviewed' v='name'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- N. STRIP TIGER TAGS BEHAVIOR                                     -->
+  <!-- ================================================================ -->
+
+
+  <!-- N1: Fully verified road with multiple tiger:* tags (stripTigerTags=true by default)
+       The fix should remove ALL non-discardable tiger:* tags, not just tiger:reviewed -->
+
+  <node id='-2301' lat='40.3500' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='mapper_n1'/>
+  </node>
+  <node id='-2302' lat='40.3505' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_n1'/>
+  </node>
+  <node id='-2303' lat='40.3510' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_n1'/>
+  </node>
+  <node id='-2304' lat='40.3515' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_n1'/>
+  </node>
+
+  <way id='-20301' version='1'>
+    <nd ref='-2301'/><nd ref='-2302'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Strip Tags Road'/>
+  </way>
+
+  <way id='-20302' version='1'>
+    <nd ref='-2302'/><nd ref='-2303'/>
+    <tag k='_test_id' v='N1'/>
+    <tag k='_test_note' v='Fully verified with extra tiger:* tags. Fix should strip all tiger tags including tiger:county, tiger:name_base.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Strip Tags Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+    <tag k='tiger:county' v='Test County'/>
+    <tag k='tiger:name_base' v='Strip Tags'/>
+    <tag k='tiger:zip_left' v='19100'/>
+  </way>
+
+  <way id='-20303' version='1'>
+    <nd ref='-2303'/><nd ref='-2304'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Strip Tags Road'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- O. SURFACE CONFLICT AND EDGE CASES                               -->
+  <!-- ================================================================ -->
+
+
+  <!-- O1: Both ends have connected roads with surface, but surfaces DISAGREE
+       (asphalt at west, gravel at east)
+       Expected: SURFACE_CONFLICT (10496673), no fix -->
+
+  <node id='-2401' lat='40.3600' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2402' lat='40.3605' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2403' lat='40.3610' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2404' lat='40.3615' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-20401' version='1'>
+    <nd ref='-2401'/><nd ref='-2402'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Conflict Surface Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <way id='-20402' version='1'>
+    <nd ref='-2402'/><nd ref='-2403'/>
+    <tag k='_test_id' v='O1'/>
+    <tag k='_test_note' v='Asphalt at west end, gravel at east end. Expect SURFACE_CONFLICT, no fix.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Conflict Surface Road'/>
+  </way>
+
+  <way id='-20403' version='1'>
+    <nd ref='-2403'/><nd ref='-2404'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Conflict Surface Road'/>
+    <tag k='surface' v='gravel'/>
+  </way>
+
+
+  <!-- O2: Road already has a specific surface — should NOT get any suggestion
+       (already has surface=concrete, even though connected roads have asphalt) -->
+
+  <node id='-2411' lat='40.3620' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2412' lat='40.3625' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2413' lat='40.3630' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2414' lat='40.3635' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-20411' version='1'>
+    <nd ref='-2411'/><nd ref='-2412'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Already Specific Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <way id='-20412' version='1'>
+    <nd ref='-2412'/><nd ref='-2413'/>
+    <tag k='_test_id' v='O2'/>
+    <tag k='_test_note' v='Already has surface=concrete (specific). Should NOT get any surface suggestion.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Already Specific Road'/>
+    <tag k='surface' v='concrete'/>
+  </way>
+
+  <way id='-20413' version='1'>
+    <nd ref='-2413'/><nd ref='-2414'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Already Specific Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+
+  <!-- O3: Connected roads have surface but connected road has empty surface tag
+       Expected: NO surface suggestion (empty surface = null) -->
+
+  <node id='-2421' lat='40.3640' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2422' lat='40.3645' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2423' lat='40.3650' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-20421' version='1'>
+    <nd ref='-2421'/><nd ref='-2422'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Empty Surface Road'/>
+    <tag k='surface' v=''/>
+  </way>
+
+  <way id='-20422' version='1'>
+    <nd ref='-2422'/><nd ref='-2423'/>
+    <tag k='_test_id' v='O3'/>
+    <tag k='_test_note' v='Connected road has empty surface tag. Should NOT get surface suggestion.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Empty Surface Road'/>
+  </way>
+
+
+  <!-- O4: Surface suggestion from connected road at interior node only (NOT endpoint)
+       Road A connects at the INTERIOR of Road B.
+       Road A should use fallback (not same-road) and get MEDIUM or LOW confidence. -->
+
+  <node id='-2431' lat='40.3660' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2432' lat='40.3665' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2433' lat='40.3670' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2434' lat='40.3675' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2435' lat='40.3665' lon='-75.0995'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <!-- Long road passing through the shared node (interior) -->
+  <way id='-20431' version='1'>
+    <nd ref='-2431'/><nd ref='-2432'/><nd ref='-2433'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Interior Connect Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <!-- Short road ending at the interior node -->
+  <way id='-20432' version='1'>
+    <nd ref='-2435'/><nd ref='-2432'/>
+    <tag k='_test_id' v='O4'/>
+    <tag k='_test_note' v='Connects at interior node of surfaced road (not endpoint). Surface should come via fallback. Expect LOW confidence one-end surface=asphalt.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Side Street'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- P. LONG ROADS (LARGER COLLECTIONS)                               -->
+  <!-- ================================================================ -->
+
+
+  <!-- P1: Long road chain — 5 connected segments, middle 3 need review
+       Demonstrates batch analysis across multiple consecutive tiger:reviewed=no ways. -->
+
+  <node id='-2501' lat='40.3800' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_p'/></node>
+  <node id='-2502' lat='40.3805' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_p'/></node>
+  <node id='-2503' lat='40.3810' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_p'/></node>
+  <node id='-2504' lat='40.3815' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_p'/></node>
+  <node id='-2505' lat='40.3820' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_p'/></node>
+  <node id='-2506' lat='40.3825' lon='-75.1000'><tag k='__TEST_VERSION' v='2'/><tag k='__TEST_USER' v='mapper_p'/></node>
+
+  <!-- Segment 1: Reviewed (no tiger:reviewed tag) -->
+  <way id='-20501' version='1'>
+    <nd ref='-2501'/><nd ref='-2502'/>
+    <tag k='highway' v='secondary'/>
+    <tag k='name' v='Long Chain Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+  <!-- Segment 2: tiger:reviewed=no — connected to reviewed road at one end -->
+  <way id='-20502' version='1'>
+    <nd ref='-2502'/><nd ref='-2503'/>
+    <tag k='_test_id' v='P1a'/>
+    <tag k='_test_note' v='Chain segment 2: tiger:reviewed=no, connected to reviewed segment 1. Expect name ONE_END + alignment = FULLY VERIFIED.'/>
+    <tag k='highway' v='secondary'/>
+    <tag k='name' v='Long Chain Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- Segment 3: tiger:reviewed=no — connected to two unreviewed roads (2 and 4)
+       Unreviewed roads can't corroborate, so no name evidence. But alignment is verified. -->
+  <way id='-20503' version='1'>
+    <nd ref='-2503'/><nd ref='-2504'/>
+    <tag k='_test_id' v='P1b'/>
+    <tag k='_test_note' v='Chain segment 3: between two unreviewed roads. No name corroboration. Expect SET_ALIGNMENT_REVIEWED (alignment only).'/>
+    <tag k='highway' v='secondary'/>
+    <tag k='name' v='Long Chain Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- Segment 4: tiger:reviewed=no — connected to unreviewed road 3 and reviewed road 5 -->
+  <way id='-20504' version='1'>
+    <nd ref='-2504'/><nd ref='-2505'/>
+    <tag k='_test_id' v='P1c'/>
+    <tag k='_test_note' v='Chain segment 4: connected to reviewed segment 5 at one end. Expect name ONE_END + alignment = FULLY VERIFIED.'/>
+    <tag k='highway' v='secondary'/>
+    <tag k='name' v='Long Chain Road'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- Segment 5: Reviewed (no tiger:reviewed tag) -->
+  <way id='-20505' version='1'>
+    <nd ref='-2505'/><nd ref='-2506'/>
+    <tag k='highway' v='secondary'/>
+    <tag k='name' v='Long Chain Road'/>
+    <tag k='surface' v='asphalt'/>
+  </way>
+
+
+  <!-- P2: Large intersection — 4 roads meeting at one node, testing name corroboration
+       with multiple possible corroborating roads -->
+
+  <node id='-2601' lat='40.3900' lon='-75.1010'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2602' lat='40.3905' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2603' lat='40.3910' lon='-75.0990'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2604' lat='40.3905' lon='-75.0980'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2605' lat='40.3900' lon='-75.0990'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <!-- North road — reviewed, same name -->
+  <way id='-20601' version='1'>
+    <nd ref='-2601'/><nd ref='-2602'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Crossroads Ave'/>
+  </way>
+
+  <!-- East road — tiger:reviewed=no, same name -->
+  <way id='-20602' version='1'>
+    <nd ref='-2602'/><nd ref='-2603'/>
+    <tag k='_test_id' v='P2a'/>
+    <tag k='_test_note' v='East arm of 4-way intersection. Connected to reviewed "Crossroads Ave" at west end. Expect name ONE_END.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Crossroads Ave'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+  <!-- South road — reviewed, different name -->
+  <way id='-20603' version='1'>
+    <nd ref='-2604'/><nd ref='-2602'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Other Street'/>
+  </way>
+
+  <!-- West road — tiger:reviewed=no, different name from reviewed roads at this node -->
+  <way id='-20604' version='1'>
+    <nd ref='-2605'/><nd ref='-2602'/>
+    <tag k='_test_id' v='P2b'/>
+    <tag k='_test_note' v='West arm with different name "Side Lane". No same-name reviewed road at endpoint. Expect no name corroboration, no warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Side Lane'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+</osm>
