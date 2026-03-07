@@ -12,6 +12,7 @@ import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck;
+import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.ConfidenceTier;
 import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.SurfaceResult;
 
 /**
@@ -106,29 +107,48 @@ public final class SurfaceAnalyzer {
                         null));
             } else if (surfaceResult.hasSuggestion()) {
                 String surface = surfaceResult.getSuggestedSurface();
+                ConfidenceTier tier = surfaceResult.getConfidence();
                 if (surfaceResult.isUpgrade()) {
-                    int code = surfaceResult.isBothEnds()
-                            ? SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS
-                            : SurfaceTest.SURFACE_UPGRADE_ONE_END;
-                    String groupMessage = surfaceResult.isBothEnds()
-                            ? tr("Upgrade generic surface (both ends)")
-                            : tr("Upgrade generic surface (one end)");
+                    int code;
+                    String groupMessage;
+                    switch (tier) {
+                    case HIGH:
+                        code = SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS;
+                        groupMessage = tr("Upgrade generic surface (same road, both ends)");
+                        break;
+                    case MEDIUM:
+                        code = SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS_MIXED;
+                        groupMessage = tr("Upgrade generic surface (both ends)");
+                        break;
+                    default:
+                        code = SurfaceTest.SURFACE_UPGRADE_ONE_END;
+                        groupMessage = tr("Upgrade generic surface (one end)");
+                        break;
+                    }
                     results.add(new SurfaceSuggestion(way, code,
-                            tr("Upgrade: {0} \u2192 {1}", existingSurface, surface),
+                            tr("Upgrade: {0} \u2192 {1} [{2}]",
+                                    existingSurface, surface, tier.getLabel()),
                             groupMessage,
                             surface));
                 } else {
                     int code;
                     String groupMessage;
-                    if (surfaceResult.isBothEnds()) {
+                    switch (tier) {
+                    case HIGH:
                         code = SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS;
+                        groupMessage = tr("Same road at both ends");
+                        break;
+                    case MEDIUM:
+                        code = SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED;
                         groupMessage = tr("Connected roads at both ends");
-                    } else {
+                        break;
+                    default:
                         code = SurfaceTest.SURFACE_SUGGESTED_ONE_END;
                         groupMessage = tr("Connected road at one end");
+                        break;
                     }
                     results.add(new SurfaceSuggestion(way, code,
-                            tr("Suggest surface={0}", surface),
+                            tr("Suggest surface={0} [{1}]", surface, tier.getLabel()),
                             groupMessage,
                             surface));
                 }

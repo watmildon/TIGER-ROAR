@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.tigerreview.checks;
 
+import static org.openstreetmap.josm.tools.I18n.tr;
+
 import java.util.List;
 
 import org.openstreetmap.josm.data.osm.Node;
@@ -12,39 +14,68 @@ import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
  * Checks if a road's surface can be inferred from connected roads.
  *
  * A surface is suggested if connected roads at both ends have the same surface tag.
- * This provides strong evidence that the road likely has the same surface.
+ * Confidence is graded based on whether connections are at the connected road's
+ * endpoint and share the same name + highway type.
  */
 public class SurfaceCheck {
 
     private static final String SURFACE = "surface";
 
     /**
+     * Confidence tier for surface suggestions.
+     */
+    public enum ConfidenceTier {
+        /** Both ends connect to same-name+highway roads at their endpoints */
+        HIGH,
+        /** Both ends have a surface but connections are mixed quality */
+        MEDIUM,
+        /** Only one end has a surface from connected roads */
+        LOW,
+        /** No suggestion available */
+        NONE;
+
+        /**
+         * @return a user-facing label for this confidence tier
+         */
+        public String getLabel() {
+            switch (this) {
+            case HIGH:
+                return tr("high confidence");
+            case MEDIUM:
+                return tr("medium confidence");
+            default:
+                return tr("low confidence");
+            }
+        }
+    }
+
+    /**
      * Result of surface check with suggested value.
      */
     public static class SurfaceResult {
         private final String suggestedSurface;
-        private final boolean bothEnds;
+        private final ConfidenceTier confidence;
         private final boolean conflicting;
         private final boolean upgrade;
 
-        public SurfaceResult(String suggestedSurface, boolean bothEnds) {
-            this(suggestedSurface, bothEnds, false, false);
+        public SurfaceResult(String suggestedSurface, ConfidenceTier confidence) {
+            this(suggestedSurface, confidence, false, false);
         }
 
-        private SurfaceResult(String suggestedSurface, boolean bothEnds,
+        private SurfaceResult(String suggestedSurface, ConfidenceTier confidence,
                               boolean conflicting, boolean upgrade) {
             this.suggestedSurface = suggestedSurface;
-            this.bothEnds = bothEnds;
+            this.confidence = confidence;
             this.conflicting = conflicting;
             this.upgrade = upgrade;
         }
 
         static SurfaceResult conflict() {
-            return new SurfaceResult(null, false, true, false);
+            return new SurfaceResult(null, ConfidenceTier.NONE, true, false);
         }
 
-        static SurfaceResult upgrade(String surface, boolean bothEnds) {
-            return new SurfaceResult(surface, bothEnds, false, true);
+        static SurfaceResult upgrade(String surface, ConfidenceTier confidence) {
+            return new SurfaceResult(surface, confidence, false, true);
         }
 
         /**
@@ -55,10 +86,17 @@ public class SurfaceCheck {
         }
 
         /**
+         * @return the confidence tier for this suggestion
+         */
+        public ConfidenceTier getConfidence() {
+            return confidence;
+        }
+
+        /**
          * @return true if the suggestion comes from roads at both ends
          */
         public boolean isBothEnds() {
-            return bothEnds;
+            return confidence == ConfidenceTier.HIGH || confidence == ConfidenceTier.MEDIUM;
         }
 
         /**
@@ -91,10 +129,13 @@ public class SurfaceCheck {
         final String surface;
         /** True if connected roads at this node have conflicting surfaces */
         final boolean hasConflict;
+        /** True if the surface came from a same-name+highway road connected at its endpoint */
+        final boolean endpointOfSameRoad;
 
-        NodeSurfaceInfo(String surface, boolean hasConflict) {
+        NodeSurfaceInfo(String surface, boolean hasConflict, boolean endpointOfSameRoad) {
             this.surface = surface;
             this.hasConflict = hasConflict;
+            this.endpointOfSameRoad = endpointOfSameRoad;
         }
     }
 
@@ -111,12 +152,12 @@ public class SurfaceCheck {
         if (existingSurface != null
                 && !"paved".equals(existingSurface)
                 && !"unpaved".equals(existingSurface)) {
-            return new SurfaceResult(null, false);
+            return new SurfaceResult(null, ConfidenceTier.NONE);
         }
 
         List<Node> nodes = way.getNodes();
         if (nodes.isEmpty()) {
-            return new SurfaceResult(null, false);
+            return new SurfaceResult(null, ConfidenceTier.NONE);
         }
 
         Node firstNode = nodes.get(0);
@@ -133,9 +174,9 @@ public class SurfaceCheck {
         // For generic surfaces, validate the suggestion is in the same category
         if (existingSurface != null && result.hasSuggestion()) {
             if (!isSameCategory(existingSurface, result.getSuggestedSurface())) {
-                return new SurfaceResult(null, false);
+                return new SurfaceResult(null, ConfidenceTier.NONE);
             }
-            return SurfaceResult.upgrade(result.getSuggestedSurface(), result.isBothEnds());
+            return SurfaceResult.upgrade(result.getSuggestedSurface(), result.getConfidence());
         }
 
         return result;
@@ -147,7 +188,10 @@ public class SurfaceCheck {
     private SurfaceResult evaluateEndpoints(NodeSurfaceInfo infoAtFirst, NodeSurfaceInfo infoAtLast) {
         // Best case: both ends have matching surfaces
         if (infoAtFirst.surface != null && infoAtFirst.surface.equals(infoAtLast.surface)) {
-            return new SurfaceResult(infoAtFirst.surface, true);
+            ConfidenceTier tier = (infoAtFirst.endpointOfSameRoad && infoAtLast.endpointOfSameRoad)
+                    ? ConfidenceTier.HIGH
+                    : ConfidenceTier.MEDIUM;
+            return new SurfaceResult(infoAtFirst.surface, tier);
         }
 
         // Conflict: both ends have a surface but they disagree
@@ -165,14 +209,14 @@ public class SurfaceCheck {
 
         // One end has a surface, the other has no info — suggest with lower confidence
         if (infoAtFirst.surface != null) {
-            return new SurfaceResult(infoAtFirst.surface, false);
+            return new SurfaceResult(infoAtFirst.surface, ConfidenceTier.LOW);
         }
         if (infoAtLast.surface != null) {
-            return new SurfaceResult(infoAtLast.surface, false);
+            return new SurfaceResult(infoAtLast.surface, ConfidenceTier.LOW);
         }
 
         // Both ends have no info
-        return new SurfaceResult(null, false);
+        return new SurfaceResult(null, ConfidenceTier.NONE);
     }
 
     /**
@@ -203,17 +247,21 @@ public class SurfaceCheck {
             return sameRoad;
         }
 
-        // Fallback: all connected roads
-        return collectSurfaces(node, excludeWay, null, null);
+        // Fallback: all connected roads — endpointOfSameRoad is always false
+        // because these are not same-name+highway connections
+        NodeSurfaceInfo fallback = collectSurfaces(node, excludeWay, null, null);
+        return new NodeSurfaceInfo(fallback.surface, fallback.hasConflict, false);
     }
 
     /**
      * Collect surface info from connected roads at a node.
-     * If filterName and filterHighway are non-null, only considers roads matching both.
+     * If filterName and filterHighway are non-null, only considers roads matching both,
+     * and tracks whether any matching road has the shared node at its endpoint.
      */
     private NodeSurfaceInfo collectSurfaces(Node node, Way excludeWay,
                                             String filterName, String filterHighway) {
         String foundSurface = null;
+        boolean anyEndpointConnection = false;
 
         for (OsmPrimitive referrer : node.getReferrers()) {
             if (referrer instanceof Way connectedWay && connectedWay != excludeWay) {
@@ -226,14 +274,29 @@ public class SurfaceCheck {
                 if (surface != null) {
                     if (foundSurface == null) {
                         foundSurface = surface;
+                        anyEndpointConnection = isEndpointNode(node, connectedWay);
                     } else if (!foundSurface.equals(surface)) {
-                        return new NodeSurfaceInfo(null, true);
+                        return new NodeSurfaceInfo(null, true, false);
+                    } else {
+                        anyEndpointConnection = anyEndpointConnection
+                                || isEndpointNode(node, connectedWay);
                     }
                 }
             }
         }
 
-        return new NodeSurfaceInfo(foundSurface, false);
+        return new NodeSurfaceInfo(foundSurface, false, anyEndpointConnection);
+    }
+
+    /**
+     * Check if a node is the first or last node of a way.
+     */
+    private static boolean isEndpointNode(Node node, Way way) {
+        List<Node> nodes = way.getNodes();
+        if (nodes.isEmpty()) {
+            return false;
+        }
+        return node.equals(nodes.get(0)) || node.equals(nodes.get(nodes.size() - 1));
     }
 
     /**

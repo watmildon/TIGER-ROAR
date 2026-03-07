@@ -56,6 +56,18 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for stripping all tiger:* tags on fully verified roads */
     public static final String PREF_STRIP_TIGER_TAGS = "tigerreview.fix.stripTigerTags";
 
+    /** Preference key for enabling Mapillary speed limit check */
+    public static final String PREF_ENABLE_MAPILLARY_CHECK = "tigerreview.check.mapillary";
+
+    /** Preference key for Mapillary API token */
+    public static final String PREF_MAPILLARY_API_KEY = "tigerreview.mapillary.apiKey";
+
+    /** Preference key for Mapillary sign-to-way matching distance */
+    public static final String PREF_MAPILLARY_MAX_DISTANCE = "tigerreview.mapillary.maxDistance";
+
+    /** Default maximum distance for Mapillary sign-to-way matching (meters) */
+    public static final double DEFAULT_MAPILLARY_MAX_DISTANCE = 25.0;
+
     /** Default maximum distance for NAD address matching (meters) */
     public static final double DEFAULT_NAD_MAX_DISTANCE = 50.0;
 
@@ -82,6 +94,9 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox nadCheckBox;
     private JCheckBox stripTigerTagsCheckBox;
     private JTextField additionalBotUsernamesField;
+    private JCheckBox mapillaryCheckBox;
+    private JTextField mapillaryApiKeyField;
+    private JSpinner mapillaryDistanceSpinner;
 
     public TIGERReviewPreferences() {
         super("preferences/tiger_review", tr("TIGER ROAR"), tr("Settings for TIGER ROAR plugin"));
@@ -203,6 +218,41 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         outerGbc.gridy = 2;
         outerPanel.add(fixPanel, outerGbc);
 
+        // === Speed Limit (Mapillary) Section ===
+        JPanel mapillaryPanel = new JPanel(new GridBagLayout());
+        mapillaryPanel.setBorder(BorderFactory.createTitledBorder(tr("Speed Limit (Mapillary)")));
+        gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        row = 0;
+
+        mapillaryCheckBox = new JCheckBox(tr("Mapillary speed limit check (US only)"));
+        mapillaryCheckBox.setToolTipText(
+                tr("Download speed limit sign detections from Mapillary for US areas. Must be enabled before downloading data."));
+        mapillaryCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_MAPILLARY_CHECK, false));
+        addCheckBox(mapillaryPanel, gbc, row++, mapillaryCheckBox);
+
+        String currentApiKey = Config.getPref().get(PREF_MAPILLARY_API_KEY, "");
+        mapillaryApiKeyField = new JTextField(currentApiKey, 20);
+        mapillaryApiKeyField.setPreferredSize(addressDistanceSpinner.getPreferredSize());
+        addLabeledRow(mapillaryPanel, gbc, row++,
+                tr("API token:"), mapillaryApiKeyField,
+                "",
+                tr("Mapillary client token from mapillary.com/dashboard/developers. Stored in JOSM preferences file."));
+
+        double currentMapillaryDistance = Config.getPref().getDouble(
+                PREF_MAPILLARY_MAX_DISTANCE, DEFAULT_MAPILLARY_MAX_DISTANCE);
+        mapillaryDistanceSpinner = new JSpinner(
+                new SpinnerNumberModel(currentMapillaryDistance, 5.0, 100.0, 5.0));
+        mapillaryDistanceSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
+        addLabeledRow(mapillaryPanel, gbc, row++,
+                tr("Sign matching distance (m):"), mapillaryDistanceSpinner,
+                tr("(default: {0})", DEFAULT_MAPILLARY_MAX_DISTANCE),
+                tr("Maximum distance to match a detected speed limit sign to a road"));
+
+        outerGbc.gridy = 3;
+        outerPanel.add(mapillaryPanel, outerGbc);
+
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.add(outerPanel, BorderLayout.NORTH);
         GridBagConstraints tabConstraints = new GridBagConstraints();
@@ -259,6 +309,12 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putDouble(PREF_NODE_MIN_PERCENTAGE_EDITED, (Double) nodePercentageSpinner.getValue() / 100.0);
         Config.getPref().putDouble(PREF_NAD_MAX_DISTANCE, (Double) nadDistanceSpinner.getValue());
         Config.getPref().put(PREF_ADDITIONAL_BOT_USERNAMES, additionalBotUsernamesField.getText().trim());
+
+        // Save Mapillary settings
+        Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_CHECK, mapillaryCheckBox.isSelected());
+        Config.getPref().put(PREF_MAPILLARY_API_KEY, mapillaryApiKeyField.getText().trim());
+        Config.getPref().putDouble(PREF_MAPILLARY_MAX_DISTANCE, (Double) mapillaryDistanceSpinner.getValue());
+
         return false; // No restart required
     }
 }

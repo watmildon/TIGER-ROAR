@@ -5,6 +5,7 @@ import org.openstreetmap.josm.gui.MapFrame;
 import org.openstreetmap.josm.gui.preferences.PreferenceSetting;
 import org.openstreetmap.josm.plugins.Plugin;
 import org.openstreetmap.josm.plugins.PluginInformation;
+import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataLoader;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataLoader;
 
 /**
@@ -20,9 +21,11 @@ public class TIGERReviewPlugin extends Plugin {
         super(info);
         OsmValidator.addTest(TIGERReviewTest.class);
         OsmValidator.addTest(SurfaceTest.class);
+        OsmValidator.addTest(SpeedLimitTest.class);
 
-        // Register NAD data loader to listen for layer changes
+        // Register external data loaders to listen for layer changes
         NadDataLoader.getInstance().register();
+        MapillaryDataLoader.getInstance().register();
     }
 
     @Override

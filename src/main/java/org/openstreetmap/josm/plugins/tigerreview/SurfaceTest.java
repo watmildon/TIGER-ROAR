@@ -10,6 +10,7 @@ import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck;
+import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.ConfidenceTier;
 import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.SurfaceResult;
 
 /**
@@ -23,20 +24,26 @@ public class SurfaceTest extends Test {
     /** Error code prefix based on Wikidata road surface ID Q1049667 */
     private static final int CODE_PREFIX = 10496670;
 
-    /** Surface inferred from connected roads at both ends (high confidence) */
+    /** Surface inferred from same-road endpoint connections at both ends (high confidence) */
     public static final int SURFACE_SUGGESTED_BOTH_ENDS = CODE_PREFIX + 1;
 
-    /** Surface inferred from connected road at one end (lower confidence) */
+    /** Surface inferred from connected road at one end (low confidence) */
     public static final int SURFACE_SUGGESTED_ONE_END = CODE_PREFIX + 2;
 
     /** Connected roads at endpoints have conflicting surfaces (needs human review) */
     public static final int SURFACE_CONFLICT = CODE_PREFIX + 3;
 
-    /** Generic surface (paved/unpaved) can be upgraded to a specific value, both ends agree */
+    /** Generic surface upgrade, same-road endpoints at both ends (high confidence) */
     public static final int SURFACE_UPGRADE_BOTH_ENDS = CODE_PREFIX + 4;
 
     /** Generic surface (paved/unpaved) can be upgraded to a specific value, one end */
     public static final int SURFACE_UPGRADE_ONE_END = CODE_PREFIX + 5;
+
+    /** Surface inferred from connected roads at both ends, mixed quality (medium confidence) */
+    public static final int SURFACE_SUGGESTED_BOTH_ENDS_MIXED = CODE_PREFIX + 6;
+
+    /** Generic surface upgrade, both ends, mixed quality (medium confidence) */
+    public static final int SURFACE_UPGRADE_BOTH_ENDS_MIXED = CODE_PREFIX + 7;
 
     /** Group message for all surface warnings in the validator tree */
     private static final String GROUP_MESSAGE = tr("Surface Suggestion");
@@ -81,30 +88,51 @@ public class SurfaceTest extends Test {
                     .build());
         } else if (result.hasSuggestion()) {
             String surface = result.getSuggestedSurface();
+            ConfidenceTier tier = result.getConfidence();
             if (result.isUpgrade()) {
-                int code = result.isBothEnds()
-                        ? SURFACE_UPGRADE_BOTH_ENDS
-                        : SURFACE_UPGRADE_ONE_END;
-                String evidence = result.isBothEnds()
-                        ? tr("connected roads at both ends")
-                        : tr("connected road");
+                int code;
+                String evidence;
+                switch (tier) {
+                case HIGH:
+                    code = SURFACE_UPGRADE_BOTH_ENDS;
+                    evidence = tr("same road at both ends");
+                    break;
+                case MEDIUM:
+                    code = SURFACE_UPGRADE_BOTH_ENDS_MIXED;
+                    evidence = tr("connected roads at both ends");
+                    break;
+                default:
+                    code = SURFACE_UPGRADE_ONE_END;
+                    evidence = tr("connected road");
+                    break;
+                }
                 errors.add(TestError.builder(this, Severity.WARNING, code)
                         .message(GROUP_MESSAGE,
-                                marktr("upgrade {0} \u2192 {1} ({2})"),
-                                existingSurface, surface, evidence)
+                                marktr("upgrade {0} \u2192 {1} ({2}) [{3}]"),
+                                existingSurface, surface, evidence, tier.getLabel())
                         .primitives(way)
                         .fix(() -> new ChangePropertyCommand(way, "surface", surface))
                         .build());
             } else {
-                int code = result.isBothEnds()
-                        ? SURFACE_SUGGESTED_BOTH_ENDS
-                        : SURFACE_SUGGESTED_ONE_END;
-                String evidence = result.isBothEnds()
-                        ? tr("connected roads at both ends")
-                        : tr("connected road");
+                int code;
+                String evidence;
+                switch (tier) {
+                case HIGH:
+                    code = SURFACE_SUGGESTED_BOTH_ENDS;
+                    evidence = tr("same road at both ends");
+                    break;
+                case MEDIUM:
+                    code = SURFACE_SUGGESTED_BOTH_ENDS_MIXED;
+                    evidence = tr("connected roads at both ends");
+                    break;
+                default:
+                    code = SURFACE_SUGGESTED_ONE_END;
+                    evidence = tr("connected road");
+                    break;
+                }
                 errors.add(TestError.builder(this, Severity.WARNING, code)
                         .message(GROUP_MESSAGE,
-                                marktr("{0} ({1})"), surface, evidence)
+                                marktr("{0} ({1}) [{2}]"), surface, evidence, tier.getLabel())
                         .primitives(way)
                         .fix(() -> new ChangePropertyCommand(way, "surface", surface))
                         .build());
