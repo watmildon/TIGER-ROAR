@@ -153,6 +153,18 @@ public final class TIGERReviewAnalyzer {
         // Build address spatial index
         addressCheck.buildIndex(dataSet);
 
+        // Pre-assign addresses to matching roads to prevent false name suggestions
+        List<Way> candidateWays = dataSet.getWays().stream()
+                .filter(Way::isUsable)
+                .filter(w -> w.get("highway") != null && HighwayConstants.TIGER_HIGHWAYS.contains(w.get("highway")))
+                .collect(Collectors.toList());
+        if (addressCheckEnabled) {
+            addressCheck.assignAddressesToRoads(candidateWays);
+        }
+        if (nadCheckEnabled) {
+            nadAddressCheck.assignAddressesToRoads(candidateWays);
+        }
+
         List<ReviewResult> results = new ArrayList<>();
 
         for (Way way : dataSet.getWays()) {
@@ -264,12 +276,19 @@ public final class TIGERReviewAnalyzer {
             }
         }
 
-        // If NAD is enabled, road has a name, but no evidence found from any source,
-        // check if NAD addresses along the way suggest a different name
+        // If road has a name but no evidence found from any source,
+        // check if nearby addresses suggest a different name
+        String addressSuggestedName = null;
         String nadSuggestedName = null;
-        if (hasName && nadCheckEnabled && !nadMatch
-                && connectionType == ConnectionType.NONE && !addressMatch) {
-            nadSuggestedName = nadAddressCheck.findSuggestedName(way, name);
+        if (hasName && connectionType == ConnectionType.NONE && !addressMatch && !nadMatch) {
+            // Check OSM addr:street data first
+            if (addressCheckEnabled) {
+                addressSuggestedName = addressCheck.findSuggestedName(way, name);
+            }
+            // Check NAD data
+            if (nadCheckEnabled) {
+                nadSuggestedName = nadAddressCheck.findSuggestedName(way, name);
+            }
         }
 
         // Gather alignment evidence
@@ -311,7 +330,13 @@ public final class TIGERReviewAnalyzer {
             }
         }
 
-        // NAD name suggestion (independent — informational only, no fix)
+        // Address name suggestions (independent — informational only, no fix)
+        if (addressSuggestedName != null) {
+            results.add(new ReviewResult(way, TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION,
+                    addressSuggestedName,
+                    tr("Nearby addresses suggest different name"),
+                    null, false));
+        }
         if (nadSuggestedName != null) {
             results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION,
                     nadSuggestedName,
@@ -328,7 +353,7 @@ public final class TIGERReviewAnalyzer {
             String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
             results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAME_UPGRADE,
                     alignmentEvidence,
-                    tr("Name upgrade (alignment now confirmed)"),
+                    tr("Fully verified"),
                     FixAction.REMOVE_TAG, stripTigerTags));
         }
     }
@@ -394,15 +419,25 @@ public final class TIGERReviewAnalyzer {
             results.add(new ReviewResult(way, code, nameEvidence,
                     tr("Fully verified"),
                     FixAction.REMOVE_TAG, stripTigerTags));
-        } else if (nadCheckEnabled && !nadMatch
-                && connectionType == ConnectionType.NONE && !addressMatch) {
-            // No name evidence at all — check if NAD suggests a different name
-            String nadSuggestedName = nadAddressCheck.findSuggestedName(way, name);
-            if (nadSuggestedName != null) {
-                results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION,
-                        nadSuggestedName,
-                        tr("NAD suggests different name"),
-                        null, false));
+        } else if (connectionType == ConnectionType.NONE && !addressMatch && !nadMatch) {
+            // No name evidence at all — check if nearby addresses suggest a different name
+            if (addressCheckEnabled) {
+                String addrSuggestedName = addressCheck.findSuggestedName(way, name);
+                if (addrSuggestedName != null) {
+                    results.add(new ReviewResult(way, TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION,
+                            addrSuggestedName,
+                            tr("Nearby addresses suggest different name"),
+                            null, false));
+                }
+            }
+            if (nadCheckEnabled) {
+                String nadSuggestedName = nadAddressCheck.findSuggestedName(way, name);
+                if (nadSuggestedName != null) {
+                    results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION,
+                            nadSuggestedName,
+                            tr("NAD suggests different name"),
+                            null, false));
+                }
             }
         }
         // If name is not corroborated and no suggestion, no action — alignment is already recorded
@@ -461,9 +496,6 @@ public final class TIGERReviewAnalyzer {
         } else if (addressMatch) {
             return tr("nearby addr:street");
         } else if (nadMatch) {
-            if (nadMatchedName != null && !nadMatchedName.equalsIgnoreCase(osmName)) {
-                return tr("NAD address data [NAD: {0}]", nadMatchedName);
-            }
             return tr("NAD address data");
         }
         return "";
@@ -543,13 +575,15 @@ public final class TIGERReviewAnalyzer {
         } else if (code == TIGERReviewTest.TIGER_UNNAMED_VERIFIED) {
             return tr("Unnamed road verified");
         } else if (code == TIGERReviewTest.TIGER_NAME_UPGRADE) {
-            return tr("Name upgrade (alignment now confirmed)");
+            return tr("Fully verified");
         } else if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) {
             return tr("Review completed, residual TIGER tags can be removed");
         } else if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) {
             return tr("Invalid tiger:reviewed value");
         } else if (code == TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION) {
             return tr("NAD suggests different name");
+        } else if (code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION) {
+            return tr("Nearby addresses suggest different name");
         }
         return null;
     }

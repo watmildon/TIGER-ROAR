@@ -448,4 +448,286 @@
     <tag k='highway' v='service' />
     <tag k='surface' v='dirt' />
   </way>
+
+  <!-- ===== Tag compatibility tests ===== -->
+
+  <!-- Test 13: tracktype=grade4 should block asphalt suggestion (hard reject) -->
+  <node id='-26001' action='modify' visible='true' lat='47.688' lon='-122.105' />
+  <node id='-26002' action='modify' visible='true' lat='47.688' lon='-122.104' />
+  <node id='-26003' action='modify' visible='true' lat='47.688' lon='-122.103' />
+  <node id='-26004' action='modify' visible='true' lat='47.688' lon='-122.102' />
+  <way id='-2001' action='modify' visible='true'>
+    <nd ref='-26001' />
+    <nd ref='-26002' />
+    <tag k='_test_id' v='13' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-2002' action='modify' visible='true'>
+    <nd ref='-26002' />
+    <nd ref='-26003' />
+    <tag k='_test_id' v='13' />
+    <tag k='_test_note' v='No suggestion. tracktype=grade4 contradicts asphalt.' />
+    <tag k='highway' v='service' />
+    <tag k='service' v='alley' />
+    <tag k='tracktype' v='grade4' />
+  </way>
+  <way id='-2003' action='modify' visible='true'>
+    <nd ref='-26003' />
+    <nd ref='-26004' />
+    <tag k='_test_id' v='13' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 14: tracktype=grade1 should allow asphalt suggestion (compatible) -->
+  <node id='-26011' action='modify' visible='true' lat='47.687' lon='-122.105' />
+  <node id='-26012' action='modify' visible='true' lat='47.687' lon='-122.104' />
+  <node id='-26013' action='modify' visible='true' lat='47.687' lon='-122.103' />
+  <node id='-26014' action='modify' visible='true' lat='47.687' lon='-122.102' />
+  <way id='-2011' action='modify' visible='true'>
+    <nd ref='-26011' />
+    <nd ref='-26012' />
+    <tag k='_test_id' v='14' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-2012' action='modify' visible='true'>
+    <nd ref='-26012' />
+    <nd ref='-26013' />
+    <tag k='_test_id' v='14' />
+    <tag k='_test_note' v='Suggest surface=asphalt. tracktype=grade1 is compatible with asphalt.' />
+    <tag k='highway' v='track' />
+    <tag k='tracktype' v='grade1' />
+  </way>
+  <way id='-2013' action='modify' visible='true'>
+    <nd ref='-26013' />
+    <nd ref='-26014' />
+    <tag k='_test_id' v='14' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 15: tracktype=grade1 should block dirt suggestion (hard reject) -->
+  <node id='-26021' action='modify' visible='true' lat='47.686' lon='-122.105' />
+  <node id='-26022' action='modify' visible='true' lat='47.686' lon='-122.104' />
+  <node id='-26023' action='modify' visible='true' lat='47.686' lon='-122.103' />
+  <node id='-26024' action='modify' visible='true' lat='47.686' lon='-122.102' />
+  <way id='-2021' action='modify' visible='true'>
+    <nd ref='-26021' />
+    <nd ref='-26022' />
+    <tag k='_test_id' v='15' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='dirt' />
+  </way>
+  <way id='-2022' action='modify' visible='true'>
+    <nd ref='-26022' />
+    <nd ref='-26023' />
+    <tag k='_test_id' v='15' />
+    <tag k='_test_note' v='No suggestion. tracktype=grade1 contradicts dirt.' />
+    <tag k='highway' v='track' />
+    <tag k='tracktype' v='grade1' />
+  </way>
+  <way id='-2023' action='modify' visible='true'>
+    <nd ref='-26023' />
+    <nd ref='-26024' />
+    <tag k='_test_id' v='15' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='dirt' />
+  </way>
+
+  <!-- Test 16: 4wd_only=yes should block asphalt suggestion (hard reject) -->
+  <node id='-26031' action='modify' visible='true' lat='47.685' lon='-122.105' />
+  <node id='-26032' action='modify' visible='true' lat='47.685' lon='-122.104' />
+  <node id='-26033' action='modify' visible='true' lat='47.685' lon='-122.103' />
+  <node id='-26034' action='modify' visible='true' lat='47.685' lon='-122.102' />
+  <way id='-2031' action='modify' visible='true'>
+    <nd ref='-26031' />
+    <nd ref='-26032' />
+    <tag k='_test_id' v='16' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-2032' action='modify' visible='true'>
+    <nd ref='-26032' />
+    <nd ref='-26033' />
+    <tag k='_test_id' v='16' />
+    <tag k='_test_note' v='No suggestion. 4wd_only=yes contradicts asphalt.' />
+    <tag k='highway' v='track' />
+    <tag k='4wd_only' v='yes' />
+  </way>
+  <way id='-2033' action='modify' visible='true'>
+    <nd ref='-26033' />
+    <nd ref='-26034' />
+    <tag k='_test_id' v='16' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 17: smoothness=horrible should block asphalt suggestion (hard reject) -->
+  <node id='-26041' action='modify' visible='true' lat='47.684' lon='-122.105' />
+  <node id='-26042' action='modify' visible='true' lat='47.684' lon='-122.104' />
+  <node id='-26043' action='modify' visible='true' lat='47.684' lon='-122.103' />
+  <node id='-26044' action='modify' visible='true' lat='47.684' lon='-122.102' />
+  <way id='-2041' action='modify' visible='true'>
+    <nd ref='-26041' />
+    <nd ref='-26042' />
+    <tag k='_test_id' v='17' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-2042' action='modify' visible='true'>
+    <nd ref='-26042' />
+    <nd ref='-26043' />
+    <tag k='_test_id' v='17' />
+    <tag k='_test_note' v='No suggestion. smoothness=horrible contradicts asphalt.' />
+    <tag k='highway' v='service' />
+    <tag k='smoothness' v='horrible' />
+  </way>
+  <way id='-2043' action='modify' visible='true'>
+    <nd ref='-26043' />
+    <nd ref='-26044' />
+    <tag k='_test_id' v='17' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 18: smoothness=excellent should block dirt suggestion (hard reject) -->
+  <node id='-26051' action='modify' visible='true' lat='47.683' lon='-122.105' />
+  <node id='-26052' action='modify' visible='true' lat='47.683' lon='-122.104' />
+  <node id='-26053' action='modify' visible='true' lat='47.683' lon='-122.103' />
+  <node id='-26054' action='modify' visible='true' lat='47.683' lon='-122.102' />
+  <way id='-2051' action='modify' visible='true'>
+    <nd ref='-26051' />
+    <nd ref='-26052' />
+    <tag k='_test_id' v='18' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='dirt' />
+  </way>
+  <way id='-2052' action='modify' visible='true'>
+    <nd ref='-26052' />
+    <nd ref='-26053' />
+    <tag k='_test_id' v='18' />
+    <tag k='_test_note' v='No suggestion. smoothness=excellent contradicts dirt.' />
+    <tag k='highway' v='service' />
+    <tag k='smoothness' v='excellent' />
+  </way>
+  <way id='-2053' action='modify' visible='true'>
+    <nd ref='-26053' />
+    <nd ref='-26054' />
+    <tag k='_test_id' v='18' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='dirt' />
+  </way>
+
+  <!-- Test 19: smoothness=bad should demote paved confidence (soft demote) -->
+  <node id='-26061' action='modify' visible='true' lat='47.682' lon='-122.105' />
+  <node id='-26062' action='modify' visible='true' lat='47.682' lon='-122.104' />
+  <node id='-26063' action='modify' visible='true' lat='47.682' lon='-122.103' />
+  <node id='-26064' action='modify' visible='true' lat='47.682' lon='-122.102' />
+  <way id='-2061' action='modify' visible='true'>
+    <nd ref='-26061' />
+    <nd ref='-26062' />
+    <tag k='_test_id' v='19' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-2062' action='modify' visible='true'>
+    <nd ref='-26062' />
+    <nd ref='-26063' />
+    <tag k='_test_id' v='19' />
+    <tag k='_test_note' v='Suggest asphalt but demoted from medium to low confidence due to smoothness=bad.' />
+    <tag k='highway' v='service' />
+    <tag k='smoothness' v='bad' />
+  </way>
+  <way id='-2063' action='modify' visible='true'>
+    <nd ref='-26063' />
+    <nd ref='-26064' />
+    <tag k='_test_id' v='19' />
+    <tag k='highway' v='service' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 20: highway=track without tracktype should demote paved confidence (soft demote) -->
+  <node id='-26071' action='modify' visible='true' lat='47.681' lon='-122.105' />
+  <node id='-26072' action='modify' visible='true' lat='47.681' lon='-122.104' />
+  <node id='-26073' action='modify' visible='true' lat='47.681' lon='-122.103' />
+  <node id='-26074' action='modify' visible='true' lat='47.681' lon='-122.102' />
+  <way id='-2071' action='modify' visible='true'>
+    <nd ref='-26071' />
+    <nd ref='-26072' />
+    <tag k='_test_id' v='20' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-2072' action='modify' visible='true'>
+    <nd ref='-26072' />
+    <nd ref='-26073' />
+    <tag k='_test_id' v='20' />
+    <tag k='_test_note' v='Suggest asphalt but demoted confidence because highway=track without tracktype.' />
+    <tag k='highway' v='track' />
+  </way>
+  <way id='-2073' action='modify' visible='true'>
+    <nd ref='-26073' />
+    <nd ref='-26074' />
+    <tag k='_test_id' v='20' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 21: tracktype=grade3 should block concrete suggestion (hard reject) -->
+  <node id='-26081' action='modify' visible='true' lat='47.680' lon='-122.105' />
+  <node id='-26082' action='modify' visible='true' lat='47.680' lon='-122.104' />
+  <node id='-26083' action='modify' visible='true' lat='47.680' lon='-122.103' />
+  <node id='-26084' action='modify' visible='true' lat='47.680' lon='-122.102' />
+  <way id='-2081' action='modify' visible='true'>
+    <nd ref='-26081' />
+    <nd ref='-26082' />
+    <tag k='_test_id' v='21' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='concrete' />
+  </way>
+  <way id='-2082' action='modify' visible='true'>
+    <nd ref='-26082' />
+    <nd ref='-26083' />
+    <tag k='_test_id' v='21' />
+    <tag k='_test_note' v='No suggestion. tracktype=grade3 contradicts concrete.' />
+    <tag k='highway' v='track' />
+    <tag k='tracktype' v='grade3' />
+  </way>
+  <way id='-2083' action='modify' visible='true'>
+    <nd ref='-26083' />
+    <nd ref='-26084' />
+    <tag k='_test_id' v='21' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='concrete' />
+  </way>
+
+  <!-- Test 22: tracktype=grade2 should allow gravel suggestion (compatible) -->
+  <node id='-26091' action='modify' visible='true' lat='47.679' lon='-122.105' />
+  <node id='-26092' action='modify' visible='true' lat='47.679' lon='-122.104' />
+  <node id='-26093' action='modify' visible='true' lat='47.679' lon='-122.103' />
+  <node id='-26094' action='modify' visible='true' lat='47.679' lon='-122.102' />
+  <way id='-2091' action='modify' visible='true'>
+    <nd ref='-26091' />
+    <nd ref='-26092' />
+    <tag k='_test_id' v='22' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='gravel' />
+  </way>
+  <way id='-2092' action='modify' visible='true'>
+    <nd ref='-26092' />
+    <nd ref='-26093' />
+    <tag k='_test_id' v='22' />
+    <tag k='_test_note' v='Suggest surface=gravel. tracktype=grade2 is compatible with gravel.' />
+    <tag k='highway' v='track' />
+    <tag k='tracktype' v='grade2' />
+  </way>
+  <way id='-2093' action='modify' visible='true'>
+    <nd ref='-26093' />
+    <nd ref='-26094' />
+    <tag k='_test_id' v='22' />
+    <tag k='highway' v='track' />
+    <tag k='surface' v='gravel' />
+  </way>
 </osm>

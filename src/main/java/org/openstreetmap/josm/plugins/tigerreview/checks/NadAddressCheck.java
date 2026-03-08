@@ -1,6 +1,8 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.tigerreview.checks;
 
+import java.util.Collection;
+
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataCache;
 
@@ -74,6 +76,16 @@ public class NadAddressCheck {
         }
 
         return cache.findMatchingName(way, name, maxDistanceMeters);
+    }
+
+    /**
+     * Pre-assign NAD address points to their matching roads.
+     *
+     * @param ways The roads to consider for assignment
+     * @see NadDataCache#assignAddressesToRoads(Collection, double)
+     */
+    public void assignAddressesToRoads(Collection<Way> ways) {
+        NadDataCache.getInstance().assignAddressesToRoads(ways, maxDistanceMeters);
     }
 
     /**

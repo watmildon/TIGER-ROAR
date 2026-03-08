@@ -3,7 +3,11 @@ package org.openstreetmap.josm.plugins.tigerreview.checks;
 
 import static org.openstreetmap.josm.tools.I18n.tr;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
@@ -20,6 +24,24 @@ import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 public class SurfaceCheck {
 
     private static final String SURFACE = "surface";
+
+    /** Smoothness values that imply a well-maintained paved surface */
+    private static final Set<String> SMOOTH_PAVED = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("excellent", "good")));
+
+    /** Smoothness values that imply an extremely rough surface, incompatible with smooth pavement */
+    private static final Set<String> ROUGH_SMOOTHNESS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("horrible", "very_horrible", "impassable")));
+
+    /** Smooth paved surface types (asphalt, concrete) that conflict with very rough smoothness */
+    private static final Set<String> SMOOTH_PAVED_SURFACES = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("asphalt", "chipseal", "concrete",
+                    "concrete:lanes", "concrete:plates")));
+
+    /** Soft/natural unpaved surfaces incompatible with good smoothness */
+    private static final Set<String> SOFT_UNPAVED_SURFACES = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("dirt", "earth", "grass", "mud", "sand",
+                    "ground", "woodchips")));
 
     /**
      * Confidence tier for surface suggestions.
@@ -45,6 +67,22 @@ public class SurfaceCheck {
                 return tr("medium confidence");
             default:
                 return tr("low confidence");
+            }
+        }
+
+        /**
+         * @return the next lower confidence tier (HIGH→MEDIUM, MEDIUM→LOW, LOW→NONE)
+         */
+        public ConfidenceTier demote() {
+            switch (this) {
+            case HIGH:
+                return MEDIUM;
+            case MEDIUM:
+                return LOW;
+            case LOW:
+                return NONE;
+            default:
+                return NONE;
             }
         }
     }
@@ -171,6 +209,16 @@ public class SurfaceCheck {
 
         SurfaceResult result = evaluateEndpoints(infoAtFirst, infoAtLast);
 
+        // Check if the way's own tags contradict or weaken the suggestion
+        if (result.hasSuggestion()) {
+            ConfidenceTier adjusted = checkTagCompatibility(way, result.getSuggestedSurface(),
+                    result.getConfidence());
+            if (adjusted == ConfidenceTier.NONE) {
+                return new SurfaceResult(null, ConfidenceTier.NONE);
+            }
+            result = new SurfaceResult(result.getSuggestedSurface(), adjusted);
+        }
+
         // For generic surfaces, validate the suggestion is in the same category
         if (existingSurface != null && result.hasSuggestion()) {
             if (!isSameCategory(existingSurface, result.getSuggestedSurface())) {
@@ -217,6 +265,77 @@ public class SurfaceCheck {
 
         // Both ends have no info
         return new SurfaceResult(null, ConfidenceTier.NONE);
+    }
+
+    /**
+     * Check if the way's own tags are compatible with the suggested surface.
+     * Returns the adjusted confidence tier, or NONE to block the suggestion entirely.
+     *
+     * <p>Hard rejects (returns NONE):
+     * <ul>
+     *   <li>tracktype grade2-5 + paved suggestion</li>
+     *   <li>tracktype grade1 + soft unpaved suggestion (dirt/grass/mud/earth/sand/ground)</li>
+     *   <li>4wd_only=yes + paved suggestion</li>
+     *   <li>smoothness excellent/good + soft unpaved suggestion</li>
+     *   <li>smoothness horrible/very_horrible/impassable + smooth paved suggestion (asphalt/concrete)</li>
+     * </ul>
+     *
+     * <p>Soft demotions (reduces confidence one tier):
+     * <ul>
+     *   <li>highway=track (without tracktype) + paved suggestion</li>
+     *   <li>smoothness bad/very_bad + paved suggestion</li>
+     * </ul>
+     */
+    private static ConfidenceTier checkTagCompatibility(Way way, String suggestedSurface,
+                                                         ConfidenceTier baseTier) {
+        boolean isPavedSuggestion = HighwayConstants.PAVED_SURFACES.contains(suggestedSurface)
+                || "paved".equals(suggestedSurface);
+        boolean isSoftUnpaved = SOFT_UNPAVED_SURFACES.contains(suggestedSurface);
+        boolean isSmoothPaved = SMOOTH_PAVED_SURFACES.contains(suggestedSurface);
+
+        ConfidenceTier tier = baseTier;
+
+        // --- tracktype checks ---
+        String tracktype = way.get("tracktype");
+        if (tracktype != null) {
+            if ("grade1".equals(tracktype) && isSoftUnpaved) {
+                // grade1 = solid surface, incompatible with dirt/grass/mud
+                return ConfidenceTier.NONE;
+            }
+            if (!"grade1".equals(tracktype) && isPavedSuggestion) {
+                // grade2-5 = increasingly soft/natural, incompatible with pavement
+                return ConfidenceTier.NONE;
+            }
+        }
+
+        // --- 4wd_only check ---
+        if ("yes".equals(way.get("4wd_only")) && isPavedSuggestion) {
+            return ConfidenceTier.NONE;
+        }
+
+        // --- smoothness checks ---
+        String smoothness = way.get("smoothness");
+        if (smoothness != null) {
+            // excellent/good smoothness + soft unpaved = hard reject
+            if (SMOOTH_PAVED.contains(smoothness) && isSoftUnpaved) {
+                return ConfidenceTier.NONE;
+            }
+            // horrible+ smoothness + smooth pavement = hard reject
+            if (ROUGH_SMOOTHNESS.contains(smoothness) && isSmoothPaved) {
+                return ConfidenceTier.NONE;
+            }
+            // bad/very_bad + paved = soft demote
+            if (("bad".equals(smoothness) || "very_bad".equals(smoothness)) && isPavedSuggestion) {
+                tier = tier.demote();
+            }
+        }
+
+        // --- highway=track without tracktype + paved = soft demote ---
+        if ("track".equals(way.get("highway")) && tracktype == null && isPavedSuggestion) {
+            tier = tier.demote();
+        }
+
+        return tier;
     }
 
     /**

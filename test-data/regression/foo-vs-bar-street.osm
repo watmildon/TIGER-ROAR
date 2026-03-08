@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version='0.6' generator='JOSM'>
+  <node id='-33250' action='modify' visible='true' lat='40.86279195019' lon='-86.08009111767' />
+  <node id='-33251' action='modify' visible='true' lat='40.8628453737' lon='-86.07674930136' />
+  <node id='-33252' action='modify' visible='true' lat='40.86350289025' lon='-86.08010741921' />
+  <node id='-33283' action='modify' visible='true' lat='40.86285570793' lon='-86.07975608372'>
+    <tag k='addr:street' v='Bar Street' />
+  </node>
+  <node id='-33306' action='modify' visible='true' lat='40.86277057662' lon='-86.07916099742'>
+    <tag k='addr:street' v='Bar Street' />
+  </node>
+  <node id='-33307' action='modify' visible='true' lat='40.8628547108' lon='-86.07880422808'>
+    <tag k='addr:street' v='Bar Street' />
+  </node>
+  <node id='-33308' action='modify' visible='true' lat='40.86278369575' lon='-86.07828323794'>
+    <tag k='addr:street' v='Bar Street' />
+  </node>
+  <node id='-33309' action='modify' visible='true' lat='40.86287716701' lon='-86.07759313929'>
+    <tag k='addr:street' v='Bar Street' />
+  </node>
+  <node id='-33310' action='modify' visible='true' lat='40.86279764093' lon='-86.07726140151'>
+    <tag k='addr:street' v='Bar Street' />
+  </node>
+  <way id='-597' action='modify' visible='true'>
+    <nd ref='-33250' />
+    <nd ref='-33251' />
+    <tag k='highway' v='residential' />
+    <tag k='name' v='Bar Street' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-598' action='modify' visible='true'>
+    <nd ref='-33250' />
+    <nd ref='-33252' />
+    <tag k='highway' v='residential' />
+    <tag k='name' v='Foo Street' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+</osm>

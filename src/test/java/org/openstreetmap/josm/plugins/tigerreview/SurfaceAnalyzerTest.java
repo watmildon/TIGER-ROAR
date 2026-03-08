@@ -63,6 +63,88 @@ class SurfaceAnalyzerTest {
         assertFalse(resultsByTestId.isEmpty(), "Should have results with _test_id tags");
     }
 
+    // --- Tag compatibility tests ---
+
+    @Test
+    void testTracktypeGrade4BlocksAsphalt() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("13"),
+                "tracktype=grade4 should block asphalt suggestion");
+    }
+
+    @Test
+    void testTracktypeGrade1AllowsAsphalt() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("14"),
+                "tracktype=grade1 should allow asphalt suggestion");
+        assertNotNull(results.get("14").getFixSupplier(),
+                "tracktype=grade1 + asphalt should be fixable");
+    }
+
+    @Test
+    void testTracktypeGrade1BlocksDirt() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("15"),
+                "tracktype=grade1 should block dirt suggestion");
+    }
+
+    @Test
+    void test4wdOnlyBlocksAsphalt() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("16"),
+                "4wd_only=yes should block asphalt suggestion");
+    }
+
+    @Test
+    void testSmoothnessHorribleBlocksAsphalt() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("17"),
+                "smoothness=horrible should block asphalt suggestion");
+    }
+
+    @Test
+    void testSmoothnessExcellentBlocksDirt() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("18"),
+                "smoothness=excellent should block dirt suggestion");
+    }
+
+    @Test
+    void testSmoothnessBadDemotesPaved() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("19"),
+                "smoothness=bad should still suggest asphalt (demoted, not blocked)");
+        // Unnamed service ways at both endpoints → HIGH, demoted one tier → MEDIUM
+        assertEquals(SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED, results.get("19").getCode(),
+                "smoothness=bad should demote high confidence to medium");
+    }
+
+    @Test
+    void testTrackWithoutTracktypeDemotesPaved() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("20"),
+                "highway=track without tracktype should still suggest asphalt (demoted, not blocked)");
+        // Unnamed track ways at both endpoints → HIGH, demoted one tier → MEDIUM
+        assertEquals(SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED, results.get("20").getCode(),
+                "highway=track without tracktype should demote confidence");
+    }
+
+    @Test
+    void testTracktypeGrade3BlocksConcrete() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("21"),
+                "tracktype=grade3 should block concrete suggestion");
+    }
+
+    @Test
+    void testTracktypeGrade2AllowsGravel() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("22"),
+                "tracktype=grade2 should allow gravel suggestion");
+        assertNotNull(results.get("22").getFixSupplier(),
+                "tracktype=grade2 + gravel should be fixable");
+    }
+
     @Test
     void testFixableResultsProduceCommands() {
         List<SurfaceSuggestion> results = SurfaceAnalyzer.analyzeAll(surfaceTestData);

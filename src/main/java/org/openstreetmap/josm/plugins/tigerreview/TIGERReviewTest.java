@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.Severity;
@@ -75,6 +76,9 @@ public class TIGERReviewTest extends Test {
     /** NAD addresses along road suggest a different name */
     public static final int TIGER_NAD_NAME_SUGGESTION = CODE_PREFIX + 16;
 
+    /** OSM addr:street data along road suggests a different name */
+    public static final int TIGER_ADDRESS_NAME_SUGGESTION = CODE_PREFIX + 17;
+
     /** Accepted values for tiger:reviewed (no error triggered).
      *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
@@ -97,6 +101,7 @@ public class TIGERReviewTest extends Test {
     private boolean nodeVersionCheckEnabled;
     private boolean nadCheckEnabled;
     private boolean stripTigerTags;
+    private boolean addressesAssigned;
 
     public TIGERReviewTest() {
         super(tr("TIGER ROAR"), tr("Validates TIGER-imported roadways for review status"));
@@ -157,6 +162,22 @@ public class TIGERReviewTest extends Test {
             return;
         }
 
+        // Lazy address assignment on first visit
+        if (!addressesAssigned && way.getDataSet() != null) {
+            List<Way> candidateWays = way.getDataSet().getWays().stream()
+                    .filter(Way::isUsable)
+                    .filter(w -> w.get("highway") != null
+                            && CLASSIFIED_HIGHWAYS.contains(w.get("highway")))
+                    .collect(Collectors.toList());
+            if (addressCheckEnabled) {
+                addressCheck.assignAddressesToRoads(candidateWays);
+            }
+            if (nadCheckEnabled) {
+                nadAddressCheck.assignAddressesToRoads(candidateWays);
+            }
+            addressesAssigned = true;
+        }
+
         List<ReviewResult> results = TIGERReviewAnalyzer.analyzeWay(way,
                 connectedRoadCheck, nodeVersionCheck, addressCheck,
                 nadAddressCheck,
@@ -182,6 +203,12 @@ public class TIGERReviewTest extends Test {
             if (code == TIGER_NAD_NAME_SUGGESTION) {
                 return TestError.builder(this, Severity.OTHER, code)
                         .message(GROUP_MESSAGE, marktr("NAD suggests different name [NAD: {0}]"), message)
+                        .primitives(way)
+                        .build();
+            }
+            if (code == TIGER_ADDRESS_NAME_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("Nearby addresses suggest different name [{0}]"), message)
                         .primitives(way)
                         .build();
             }
