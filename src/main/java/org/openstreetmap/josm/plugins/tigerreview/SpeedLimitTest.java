@@ -9,8 +9,8 @@ import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
+import org.openstreetmap.josm.plugins.tigerreview.SpeedLimitAnalyzer.SpeedLimitSuggestion;
 import org.openstreetmap.josm.plugins.tigerreview.checks.SpeedLimitCheck;
-import org.openstreetmap.josm.plugins.tigerreview.checks.SpeedLimitCheck.SpeedLimitResult;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataCache;
 import org.openstreetmap.josm.spi.preferences.Config;
 
@@ -22,6 +22,9 @@ import org.openstreetmap.josm.spi.preferences.Config;
  *
  * <p>This test is opt-in; it only produces results when the Mapillary check
  * is enabled and data has been loaded.</p>
+ *
+ * <p>Analysis logic is in {@link SpeedLimitAnalyzer}; this class translates
+ * results into JOSM TestError objects.</p>
  */
 public class SpeedLimitTest extends Test {
 
@@ -67,39 +70,29 @@ public class SpeedLimitTest extends Test {
             return;
         }
 
-        if (!way.isUsable()) {
+        if (!SpeedLimitAnalyzer.isEligible(way)) {
             return;
         }
 
-        String highway = way.get("highway");
-        if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
+        SpeedLimitSuggestion suggestion = SpeedLimitAnalyzer.analyzeWay(way, speedLimitCheck);
+        if (suggestion == null) {
             return;
         }
 
-        SpeedLimitResult result = speedLimitCheck.check(way);
+        boolean isConflict = suggestion.getCode() == SPEED_CONFLICT
+                || suggestion.getCode() == SPEED_CONFLICT_MULTI_SIGN;
+        Severity severity = isConflict ? Severity.OTHER : Severity.WARNING;
 
-        if (result.getType() == SpeedLimitResult.ResultType.MISSING) {
-            String speedTag = result.getDetectedSpeed() + " mph";
-            int code = result.getDetectionCount() > 1 ? SPEED_MISSING_MULTI_SIGN : SPEED_MISSING;
-            errors.add(TestError.builder(this, Severity.WARNING, code)
-                    .message(GROUP_MESSAGE,
-                            marktr("{0} ({1} sign(s))"), speedTag,
-                            String.valueOf(result.getDetectionCount()))
-                    .primitives(way)
-                    .fix(() -> new ChangePropertyCommand(way, "maxspeed", speedTag))
-                    .build());
+        TestError.Builder builder = TestError.builder(this, severity, suggestion.getCode())
+                .message(GROUP_MESSAGE, marktr("{0}"), suggestion.getMessage())
+                .primitives(way);
 
-        } else if (result.getType() == SpeedLimitResult.ResultType.CONFLICT) {
-            String detected = result.getDetectedSpeed() + " mph";
-            int code = result.getDetectionCount() > 1 ? SPEED_CONFLICT_MULTI_SIGN : SPEED_CONFLICT;
-            errors.add(TestError.builder(this, Severity.OTHER, code)
-                    .message(GROUP_MESSAGE,
-                            marktr("OSM: {0}, Mapillary: {1} ({2} sign(s))"),
-                            result.getExistingMaxspeed(), detected,
-                            String.valueOf(result.getDetectionCount()))
-                    .primitives(way)
-                    .build());
+        if (suggestion.getMaxspeedValue() != null) {
+            String maxspeed = suggestion.getMaxspeedValue();
+            builder.fix(() -> new ChangePropertyCommand(way, "maxspeed", maxspeed));
         }
+
+        errors.add(builder.build());
     }
 
     @Override

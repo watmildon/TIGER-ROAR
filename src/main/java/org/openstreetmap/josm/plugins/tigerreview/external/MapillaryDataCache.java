@@ -13,6 +13,9 @@ import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.CellRange;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.GridCell;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.MarkingDetection;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.SpeedLimitDetection;
 import org.openstreetmap.josm.tools.Logging;
@@ -20,13 +23,9 @@ import org.openstreetmap.josm.tools.Logging;
 /**
  * Thread-safe cache and spatial index for Mapillary speed limit detections.
  *
- * Uses a grid-based spatial index (same pattern as {@link NadDataCache})
- * for efficient nearby detection lookups.
+ * Uses a grid-based spatial index for efficient nearby detection lookups.
  */
 public class MapillaryDataCache {
-
-    /** Grid cell size in meters (approximately) */
-    private static final double GRID_CELL_SIZE = 10.0;
 
     /** Singleton instance */
     private static MapillaryDataCache instance;
@@ -93,7 +92,7 @@ public class MapillaryDataCache {
                     continue;
                 }
 
-                GridCell cell = new GridCell(en, GRID_CELL_SIZE);
+                GridCell cell = new GridCell(en);
                 detectionGrid.computeIfAbsent(cell, k -> new ArrayList<>())
                         .add(new CachedDetection(det, en));
                 detectionCount++;
@@ -133,7 +132,7 @@ public class MapillaryDataCache {
                     continue;
                 }
 
-                GridCell cell = new GridCell(en, GRID_CELL_SIZE);
+                GridCell cell = new GridCell(en);
                 markingGrid.computeIfAbsent(cell, k -> new ArrayList<>())
                         .add(new CachedMarking(det, en));
                 markingCount++;
@@ -277,32 +276,13 @@ public class MapillaryDataCache {
      */
     private void findMarkingsNearSegment(EastNorth en1, EastNorth en2,
             double maxDistance, List<MarkingDetection> results) {
-        double minX = Math.min(en1.getX(), en2.getX()) - maxDistance;
-        double maxX = Math.max(en1.getX(), en2.getX()) + maxDistance;
-        double minY = Math.min(en1.getY(), en2.getY()) - maxDistance;
-        double maxY = Math.max(en1.getY(), en2.getY()) + maxDistance;
+        CellRange range = CellRange.of(en1, en2, maxDistance);
 
-        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
-        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
-        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
-        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
-
-        for (int cx = minCellX; cx <= maxCellX; cx++) {
-            for (int cy = minCellY; cy <= maxCellY; cy++) {
-                GridCell cell = new GridCell(cx, cy);
-                List<CachedMarking> cached = markingGrid.get(cell);
-
-                if (cached == null) {
-                    continue;
-                }
-
-                for (CachedMarking det : cached) {
-                    double dist = distanceToSegment(det.location(), en1, en2);
-                    if (dist <= maxDistance) {
-                        if (!containsMarking(results, det.marking().id())) {
-                            results.add(det.marking());
-                        }
-                    }
+        for (CachedMarking det : SpatialUtils.collectFromGrid(markingGrid, range)) {
+            double dist = SpatialUtils.distanceToSegment(det.location(), en1, en2);
+            if (dist <= maxDistance) {
+                if (!containsMarking(results, det.marking().id())) {
+                    results.add(det.marking());
                 }
             }
         }
@@ -369,33 +349,13 @@ public class MapillaryDataCache {
      */
     private void findDetectionsNearSegment(EastNorth en1, EastNorth en2,
             double maxDistance, List<SpeedLimitDetection> results) {
-        double minX = Math.min(en1.getX(), en2.getX()) - maxDistance;
-        double maxX = Math.max(en1.getX(), en2.getX()) + maxDistance;
-        double minY = Math.min(en1.getY(), en2.getY()) - maxDistance;
-        double maxY = Math.max(en1.getY(), en2.getY()) + maxDistance;
+        CellRange range = CellRange.of(en1, en2, maxDistance);
 
-        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
-        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
-        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
-        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
-
-        for (int cx = minCellX; cx <= maxCellX; cx++) {
-            for (int cy = minCellY; cy <= maxCellY; cy++) {
-                GridCell cell = new GridCell(cx, cy);
-                List<CachedDetection> cached = detectionGrid.get(cell);
-
-                if (cached == null) {
-                    continue;
-                }
-
-                for (CachedDetection det : cached) {
-                    double dist = distanceToSegment(det.location(), en1, en2);
-                    if (dist <= maxDistance) {
-                        // Avoid duplicates (a detection might be near multiple segments)
-                        if (!containsDetection(results, det.detection().id())) {
-                            results.add(det.detection());
-                        }
-                    }
+        for (CachedDetection det : SpatialUtils.collectFromGrid(detectionGrid, range)) {
+            double dist = SpatialUtils.distanceToSegment(det.location(), en1, en2);
+            if (dist <= maxDistance) {
+                if (!containsDetection(results, det.detection().id())) {
+                    results.add(det.detection());
                 }
             }
         }
@@ -412,42 +372,6 @@ public class MapillaryDataCache {
             }
         }
         return false;
-    }
-
-    /**
-     * Calculate the distance from a point to a line segment.
-     */
-    static double distanceToSegment(EastNorth point, EastNorth segStart, EastNorth segEnd) {
-        double dx = segEnd.getX() - segStart.getX();
-        double dy = segEnd.getY() - segStart.getY();
-
-        if (dx == 0 && dy == 0) {
-            return point.distance(segStart);
-        }
-
-        double t = ((point.getX() - segStart.getX()) * dx + (point.getY() - segStart.getY()) * dy)
-                / (dx * dx + dy * dy);
-
-        if (t < 0) {
-            return point.distance(segStart);
-        } else if (t > 1) {
-            return point.distance(segEnd);
-        } else {
-            EastNorth projection = new EastNorth(
-                    segStart.getX() + t * dx,
-                    segStart.getY() + t * dy);
-            return point.distance(projection);
-        }
-    }
-
-    /**
-     * Grid cell for spatial indexing.
-     */
-    private record GridCell(int x, int y) {
-        GridCell(EastNorth en, double cellSize) {
-            this((int) Math.floor(en.getX() / cellSize),
-                 (int) Math.floor(en.getY() / cellSize));
-        }
     }
 
     /**

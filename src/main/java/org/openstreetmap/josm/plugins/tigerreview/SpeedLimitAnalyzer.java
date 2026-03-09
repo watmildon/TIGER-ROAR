@@ -16,7 +16,8 @@ import org.openstreetmap.josm.plugins.tigerreview.checks.SpeedLimitCheck.SpeedLi
 
 /**
  * Analysis engine for speed limit suggestions based on Mapillary sign detections,
- * used by the side panel's Speed Limit tab.
+ * used by both the validator test ({@link SpeedLimitTest}) and the side panel's
+ * Speed Limit tab.
  */
 public final class SpeedLimitAnalyzer {
 
@@ -70,6 +71,70 @@ public final class SpeedLimitAnalyzer {
             }
             return () -> new ChangePropertyCommand(way, "maxspeed", maxspeedValue);
         }
+
+        public String getMaxspeedValue() {
+            return maxspeedValue;
+        }
+    }
+
+    /**
+     * Check if a way is eligible for speed limit analysis.
+     */
+    public static boolean isEligible(Way way) {
+        if (!way.isUsable()) {
+            return false;
+        }
+        String highway = way.get("highway");
+        return highway != null && HighwayConstants.SURFACE_HIGHWAYS.contains(highway);
+    }
+
+    /**
+     * Analyze a single way for speed limit suggestions.
+     *
+     * @param way   the way to analyze
+     * @param check the check instance to use
+     * @return a suggestion, or null if no suggestion
+     */
+    public static SpeedLimitSuggestion analyzeWay(Way way, SpeedLimitCheck check) {
+        SpeedLimitResult result = check.check(way);
+
+        if (result.getType() == SpeedLimitResult.ResultType.MISSING) {
+            String speedTag = result.getDetectedSpeed() + " mph";
+            int code;
+            String groupMessage;
+            if (result.getDetectionCount() > 1) {
+                code = SpeedLimitTest.SPEED_MISSING_MULTI_SIGN;
+                groupMessage = tr("Missing speed limit (multiple signs)");
+            } else {
+                code = SpeedLimitTest.SPEED_MISSING;
+                groupMessage = tr("Missing speed limit");
+            }
+            return new SpeedLimitSuggestion(way, code,
+                    tr("Mapillary: {0} ({1} sign(s))",
+                            speedTag, result.getDetectionCount()),
+                    groupMessage,
+                    speedTag);
+
+        } else if (result.getType() == SpeedLimitResult.ResultType.CONFLICT) {
+            String detected = result.getDetectedSpeed() + " mph";
+            int code;
+            String groupMessage;
+            if (result.getDetectionCount() > 1) {
+                code = SpeedLimitTest.SPEED_CONFLICT_MULTI_SIGN;
+                groupMessage = tr("Speed limit conflict (multiple signs)");
+            } else {
+                code = SpeedLimitTest.SPEED_CONFLICT;
+                groupMessage = tr("Speed limit conflict");
+            }
+            return new SpeedLimitSuggestion(way, code,
+                    tr("OSM: {0}, Mapillary: {1} ({2} sign(s))",
+                            result.getExistingMaxspeed(), detected,
+                            result.getDetectionCount()),
+                    groupMessage,
+                    null); // No auto-fix for conflicts
+        }
+
+        return null;
     }
 
     /**
@@ -83,51 +148,13 @@ public final class SpeedLimitAnalyzer {
         List<SpeedLimitSuggestion> results = new ArrayList<>();
 
         for (Way way : dataSet.getWays()) {
-            if (!way.isUsable()) {
+            if (!isEligible(way)) {
                 continue;
             }
 
-            String highway = way.get("highway");
-            if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
-                continue;
-            }
-
-            SpeedLimitResult result = check.check(way);
-
-            if (result.getType() == SpeedLimitResult.ResultType.MISSING) {
-                String speedTag = result.getDetectedSpeed() + " mph";
-                int code;
-                String groupMessage;
-                if (result.getDetectionCount() > 1) {
-                    code = SpeedLimitTest.SPEED_MISSING_MULTI_SIGN;
-                    groupMessage = tr("Missing speed limit (multiple signs)");
-                } else {
-                    code = SpeedLimitTest.SPEED_MISSING;
-                    groupMessage = tr("Missing speed limit");
-                }
-                results.add(new SpeedLimitSuggestion(way, code,
-                        tr("Mapillary: {0} ({1} sign(s))",
-                                speedTag, result.getDetectionCount()),
-                        groupMessage,
-                        speedTag));
-
-            } else if (result.getType() == SpeedLimitResult.ResultType.CONFLICT) {
-                String detected = result.getDetectedSpeed() + " mph";
-                int code;
-                String groupMessage;
-                if (result.getDetectionCount() > 1) {
-                    code = SpeedLimitTest.SPEED_CONFLICT_MULTI_SIGN;
-                    groupMessage = tr("Speed limit conflict (multiple signs)");
-                } else {
-                    code = SpeedLimitTest.SPEED_CONFLICT;
-                    groupMessage = tr("Speed limit conflict");
-                }
-                results.add(new SpeedLimitSuggestion(way, code,
-                        tr("OSM: {0}, Mapillary: {1} ({2} sign(s))",
-                                result.getExistingMaxspeed(), detected,
-                                result.getDetectionCount()),
-                        groupMessage,
-                        null)); // No auto-fix for conflicts
+            SpeedLimitSuggestion suggestion = analyzeWay(way, check);
+            if (suggestion != null) {
+                results.add(suggestion);
             }
         }
 

@@ -9,15 +9,17 @@ import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
+import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
 import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck;
-import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.ConfidenceTier;
-import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.SurfaceResult;
 
 /**
  * Validator test for suggesting road surface tags based on connected roads.
  *
  * Runs independently of TIGER review — analyzes all vehicular roads
  * that lack a surface tag, regardless of tiger:reviewed status.
+ *
+ * Analysis logic is in {@link SurfaceAnalyzer}; this class translates
+ * results into JOSM TestError objects.
  */
 public class SurfaceTest extends Test {
 
@@ -66,92 +68,28 @@ public class SurfaceTest extends Test {
 
     @Override
     public void visit(Way way) {
-        if (!way.isUsable()) {
+        if (!SurfaceAnalyzer.isEligible(way)) {
             return;
         }
 
-        String highway = way.get("highway");
-        if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
+        SurfaceSuggestion suggestion = SurfaceAnalyzer.analyzeWay(way, surfaceCheck);
+        if (suggestion == null) {
             return;
         }
 
-        // Already has a specific surface — nothing to suggest
-        String existingSurface = way.get("surface");
-        if (existingSurface != null
-                && !"paved".equals(existingSurface)
-                && !"unpaved".equals(existingSurface)) {
-            return;
+        Severity severity = (suggestion.getCode() == SURFACE_CONFLICT)
+                ? Severity.OTHER : Severity.WARNING;
+
+        TestError.Builder builder = TestError.builder(this, severity, suggestion.getCode())
+                .message(GROUP_MESSAGE, marktr("{0}"), suggestion.getMessage())
+                .primitives(way);
+
+        if (suggestion.getSurfaceValue() != null) {
+            String surface = suggestion.getSurfaceValue();
+            builder.fix(() -> new ChangePropertyCommand(way, "surface", surface));
         }
 
-        SurfaceResult result = surfaceCheck.checkSurface(way);
-        if (result.isConflicting()) {
-            errors.add(TestError.builder(this, Severity.OTHER, SURFACE_CONFLICT)
-                    .message(GROUP_MESSAGE, marktr("conflicting surfaces at endpoints"))
-                    .primitives(way)
-                    .build());
-        } else if (result.hasSuggestion()) {
-            String surface = result.getSuggestedSurface();
-            ConfidenceTier tier = result.getConfidence();
-            String markingSuffix = result.hasMarkingEvidence() ? " + Mapillary markings" : "";
-            if (result.isUpgrade()) {
-                int code;
-                String evidence;
-                switch (tier) {
-                case HIGH:
-                    code = SURFACE_UPGRADE_BOTH_ENDS;
-                    evidence = tr("same road at both ends");
-                    break;
-                case MEDIUM:
-                    code = SURFACE_UPGRADE_BOTH_ENDS_MIXED;
-                    evidence = tr("connected roads at both ends");
-                    break;
-                default:
-                    code = SURFACE_UPGRADE_ONE_END;
-                    evidence = tr("connected road");
-                    break;
-                }
-                errors.add(TestError.builder(this, Severity.WARNING, code)
-                        .message(GROUP_MESSAGE,
-                                marktr("upgrade {0} \u2192 {1} ({2}) [{3}]"),
-                                existingSurface, surface, evidence + markingSuffix, tier.getLabel())
-                        .primitives(way)
-                        .fix(() -> new ChangePropertyCommand(way, "surface", surface))
-                        .build());
-            } else if (result.hasMarkingEvidence() && tier == ConfidenceTier.LOW
-                    && "paved".equals(surface)
-                    && existingSurface == null) {
-                // Marking-only suggestion: no connected-road evidence
-                errors.add(TestError.builder(this, Severity.WARNING, SURFACE_SUGGESTED_MAPILLARY_MARKING)
-                        .message(GROUP_MESSAGE,
-                                marktr("{0} (Mapillary road markings) [{1}]"), surface, tier.getLabel())
-                        .primitives(way)
-                        .fix(() -> new ChangePropertyCommand(way, "surface", surface))
-                        .build());
-            } else {
-                int code;
-                String evidence;
-                switch (tier) {
-                case HIGH:
-                    code = SURFACE_SUGGESTED_BOTH_ENDS;
-                    evidence = tr("same road at both ends");
-                    break;
-                case MEDIUM:
-                    code = SURFACE_SUGGESTED_BOTH_ENDS_MIXED;
-                    evidence = tr("connected roads at both ends");
-                    break;
-                default:
-                    code = SURFACE_SUGGESTED_ONE_END;
-                    evidence = tr("connected road");
-                    break;
-                }
-                errors.add(TestError.builder(this, Severity.WARNING, code)
-                        .message(GROUP_MESSAGE,
-                                marktr("{0} ({1}) [{2}]"), surface, evidence + markingSuffix, tier.getLabel())
-                        .primitives(way)
-                        .fix(() -> new ChangePropertyCommand(way, "surface", surface))
-                        .build());
-            }
-        }
+        errors.add(builder.build());
     }
 
     @Override

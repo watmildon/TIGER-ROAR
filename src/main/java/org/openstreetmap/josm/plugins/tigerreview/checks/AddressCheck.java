@@ -17,6 +17,9 @@ import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
 import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.CellRange;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.GridCell;
 
 /**
  * Checks if a road's name is corroborated by nearby address data.
@@ -27,9 +30,6 @@ import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 public class AddressCheck {
 
     private static final String ADDR_STREET = "addr:street";
-
-    /** Grid cell size in meters (approximately) */
-    private static final double GRID_CELL_SIZE = 10.0;
 
     private final double maxDistanceMeters;
     private final Map<GridCell, List<AddressData>> addressGrid;
@@ -82,7 +82,7 @@ public class AddressCheck {
                 continue;
             }
 
-            GridCell cell = new GridCell(en, GRID_CELL_SIZE);
+            GridCell cell = new GridCell(en);
             addressGrid.computeIfAbsent(cell, k -> new ArrayList<>())
                     .add(new AddressData(addrStreet, en));
         }
@@ -252,39 +252,20 @@ public class AddressCheck {
      */
     private void collectNonMatchingNamesNearSegment(EastNorth en1, EastNorth en2, String name,
             double scaledMaxDistance, Map<String, Integer> nameCounts) {
-        double minX = Math.min(en1.getX(), en2.getX()) - scaledMaxDistance;
-        double maxX = Math.max(en1.getX(), en2.getX()) + scaledMaxDistance;
-        double minY = Math.min(en1.getY(), en2.getY()) - scaledMaxDistance;
-        double maxY = Math.max(en1.getY(), en2.getY()) + scaledMaxDistance;
+        CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
-        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
-        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
-        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
-        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
+        for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
+            if (name.equalsIgnoreCase(addr.streetName)) {
+                continue; // skip matches
+            }
 
-        for (int cx = minCellX; cx <= maxCellX; cx++) {
-            for (int cy = minCellY; cy <= maxCellY; cy++) {
-                GridCell cell = new GridCell(cx, cy);
-                List<AddressData> addresses = addressGrid.get(cell);
+            if (assignedAddresses.contains(addr)) {
+                continue; // already assigned to a matching road
+            }
 
-                if (addresses == null) {
-                    continue;
-                }
-
-                for (AddressData addr : addresses) {
-                    if (name.equalsIgnoreCase(addr.streetName)) {
-                        continue; // skip matches
-                    }
-
-                    if (assignedAddresses.contains(addr)) {
-                        continue; // already assigned to a matching road
-                    }
-
-                    double dist = distanceToSegment(addr.location, en1, en2);
-                    if (dist <= scaledMaxDistance) {
-                        nameCounts.merge(addr.streetName, 1, Integer::sum);
-                    }
-                }
+            double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
+            if (dist <= scaledMaxDistance) {
+                nameCounts.merge(addr.streetName, 1, Integer::sum);
             }
         }
     }
@@ -294,32 +275,13 @@ public class AddressCheck {
      */
     private void markMatchingAddressesNearSegment(EastNorth en1, EastNorth en2, String name,
             double scaledMaxDistance) {
-        double minX = Math.min(en1.getX(), en2.getX()) - scaledMaxDistance;
-        double maxX = Math.max(en1.getX(), en2.getX()) + scaledMaxDistance;
-        double minY = Math.min(en1.getY(), en2.getY()) - scaledMaxDistance;
-        double maxY = Math.max(en1.getY(), en2.getY()) + scaledMaxDistance;
+        CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
-        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
-        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
-        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
-        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
-
-        for (int cx = minCellX; cx <= maxCellX; cx++) {
-            for (int cy = minCellY; cy <= maxCellY; cy++) {
-                GridCell cell = new GridCell(cx, cy);
-                List<AddressData> addresses = addressGrid.get(cell);
-
-                if (addresses == null) {
-                    continue;
-                }
-
-                for (AddressData addr : addresses) {
-                    if (name.equalsIgnoreCase(addr.streetName)) {
-                        double dist = distanceToSegment(addr.location, en1, en2);
-                        if (dist <= scaledMaxDistance) {
-                            assignedAddresses.add(addr);
-                        }
-                    }
+        for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
+            if (name.equalsIgnoreCase(addr.streetName)) {
+                double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
+                if (dist <= scaledMaxDistance) {
+                    assignedAddresses.add(addr);
                 }
             }
         }
@@ -339,73 +301,18 @@ public class AddressCheck {
      */
     private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String name,
             double scaledMaxDistance) {
-        // Calculate bounding box around segment with buffer (using scaled distance)
-        double minX = Math.min(en1.getX(), en2.getX()) - scaledMaxDistance;
-        double maxX = Math.max(en1.getX(), en2.getX()) + scaledMaxDistance;
-        double minY = Math.min(en1.getY(), en2.getY()) - scaledMaxDistance;
-        double maxY = Math.max(en1.getY(), en2.getY()) + scaledMaxDistance;
+        CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
-        // Calculate grid cell range to check
-        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
-        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
-        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
-        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
-
-        // Check all cells in range
-        for (int cx = minCellX; cx <= maxCellX; cx++) {
-            for (int cy = minCellY; cy <= maxCellY; cy++) {
-                GridCell cell = new GridCell(cx, cy);
-                List<AddressData> addresses = addressGrid.get(cell);
-
-                if (addresses == null) {
-                    continue;
-                }
-
-                for (AddressData addr : addresses) {
-                    // Case-insensitive comparison to handle minor casing differences
-                    if (name.equalsIgnoreCase(addr.streetName)) {
-                        // Check actual distance to segment
-                        double dist = distanceToSegment(addr.location, en1, en2);
-                        if (dist <= scaledMaxDistance) {
-                            return true;
-                        }
-                    }
+        for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
+            if (name.equalsIgnoreCase(addr.streetName)) {
+                double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
+                if (dist <= scaledMaxDistance) {
+                    return true;
                 }
             }
         }
 
         return false;
-    }
-
-    /**
-     * Calculate the distance from a point to a line segment.
-     */
-    private double distanceToSegment(EastNorth point, EastNorth segStart, EastNorth segEnd) {
-        double dx = segEnd.getX() - segStart.getX();
-        double dy = segEnd.getY() - segStart.getY();
-
-        if (dx == 0 && dy == 0) {
-            // Segment is a point
-            return point.distance(segStart);
-        }
-
-        // Calculate projection parameter
-        double t = ((point.getX() - segStart.getX()) * dx + (point.getY() - segStart.getY()) * dy)
-                / (dx * dx + dy * dy);
-
-        if (t < 0) {
-            // Closest to start
-            return point.distance(segStart);
-        } else if (t > 1) {
-            // Closest to end
-            return point.distance(segEnd);
-        } else {
-            // Closest to interior point
-            EastNorth projection = new EastNorth(
-                    segStart.getX() + t * dx,
-                    segStart.getY() + t * dy);
-            return point.distance(projection);
-        }
     }
 
     /**
@@ -423,16 +330,6 @@ public class AddressCheck {
         } else {
             // Relations - use bounding box center
             return primitive.getBBox().getCenter().getEastNorth(ProjectionRegistry.getProjection());
-        }
-    }
-
-    /**
-     * Grid cell for spatial indexing.
-     */
-    private record GridCell(int x, int y) {
-        GridCell(EastNorth en, double cellSize) {
-            this((int) Math.floor(en.getX() / cellSize),
-                 (int) Math.floor(en.getY() / cellSize));
         }
     }
 
