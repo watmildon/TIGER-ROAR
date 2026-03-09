@@ -13,6 +13,10 @@ import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
+import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewPreferences;
+import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.MarkingDetection;
+import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataCache;
+import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
  * Checks if a road's surface can be inferred from connected roads.
@@ -95,25 +99,39 @@ public class SurfaceCheck {
         private final ConfidenceTier confidence;
         private final boolean conflicting;
         private final boolean upgrade;
+        private final boolean hasMarkingEvidence;
 
         public SurfaceResult(String suggestedSurface, ConfidenceTier confidence) {
-            this(suggestedSurface, confidence, false, false);
+            this(suggestedSurface, confidence, false, false, false);
         }
 
         private SurfaceResult(String suggestedSurface, ConfidenceTier confidence,
-                              boolean conflicting, boolean upgrade) {
+                              boolean conflicting, boolean upgrade, boolean hasMarkingEvidence) {
             this.suggestedSurface = suggestedSurface;
             this.confidence = confidence;
             this.conflicting = conflicting;
             this.upgrade = upgrade;
+            this.hasMarkingEvidence = hasMarkingEvidence;
         }
 
         static SurfaceResult conflict() {
-            return new SurfaceResult(null, ConfidenceTier.NONE, true, false);
+            return new SurfaceResult(null, ConfidenceTier.NONE, true, false, false);
         }
 
         static SurfaceResult upgrade(String surface, ConfidenceTier confidence) {
-            return new SurfaceResult(surface, confidence, false, true);
+            return new SurfaceResult(surface, confidence, false, true, false);
+        }
+
+        static SurfaceResult upgrade(String surface, ConfidenceTier confidence, boolean hasMarkingEvidence) {
+            return new SurfaceResult(surface, confidence, false, true, hasMarkingEvidence);
+        }
+
+        SurfaceResult withMarkingEvidence() {
+            return new SurfaceResult(suggestedSurface, confidence, conflicting, upgrade, true);
+        }
+
+        SurfaceResult withConfidence(ConfidenceTier newConfidence) {
+            return new SurfaceResult(suggestedSurface, newConfidence, conflicting, upgrade, hasMarkingEvidence);
         }
 
         /**
@@ -157,6 +175,13 @@ public class SurfaceCheck {
         public boolean hasSuggestion() {
             return suggestedSurface != null;
         }
+
+        /**
+         * @return true if Mapillary road marking detections corroborate this suggestion
+         */
+        public boolean hasMarkingEvidence() {
+            return hasMarkingEvidence;
+        }
     }
 
     /**
@@ -178,7 +203,7 @@ public class SurfaceCheck {
     }
 
     /**
-     * Check if a surface can be inferred from connected roads.
+     * Check if a surface can be inferred from connected roads and/or Mapillary markings.
      *
      * @param way The way to check (should not already have a surface tag)
      * @return SurfaceResult with suggested surface if found
@@ -209,6 +234,25 @@ public class SurfaceCheck {
 
         SurfaceResult result = evaluateEndpoints(infoAtFirst, infoAtLast);
 
+        // Check for Mapillary road marking evidence
+        boolean hasMarkings = hasNearbyMarkings(way);
+
+        // If connected-road analysis found nothing but markings exist, suggest "paved"
+        if (!result.hasSuggestion() && !result.isConflicting() && hasMarkings) {
+            result = new SurfaceResult("paved", ConfidenceTier.LOW);
+            result = result.withMarkingEvidence();
+        }
+
+        // If connected-road analysis suggests paved and markings agree, boost confidence
+        if (result.hasSuggestion() && hasMarkings && !result.hasMarkingEvidence()) {
+            String suggested = result.getSuggestedSurface();
+            if (HighwayConstants.PAVED_SURFACES.contains(suggested) || "paved".equals(suggested)) {
+                ConfidenceTier boosted = result.getConfidence() == ConfidenceTier.LOW
+                        ? ConfidenceTier.MEDIUM : result.getConfidence();
+                result = result.withConfidence(boosted).withMarkingEvidence();
+            }
+        }
+
         // Check if the way's own tags contradict or weaken the suggestion
         if (result.hasSuggestion()) {
             ConfidenceTier adjusted = checkTagCompatibility(way, result.getSuggestedSurface(),
@@ -216,7 +260,7 @@ public class SurfaceCheck {
             if (adjusted == ConfidenceTier.NONE) {
                 return new SurfaceResult(null, ConfidenceTier.NONE);
             }
-            result = new SurfaceResult(result.getSuggestedSurface(), adjusted);
+            result = result.withConfidence(adjusted);
         }
 
         // For generic surfaces, validate the suggestion is in the same category
@@ -224,10 +268,34 @@ public class SurfaceCheck {
             if (!isSameCategory(existingSurface, result.getSuggestedSurface())) {
                 return new SurfaceResult(null, ConfidenceTier.NONE);
             }
-            return SurfaceResult.upgrade(result.getSuggestedSurface(), result.getConfidence());
+            return SurfaceResult.upgrade(result.getSuggestedSurface(),
+                    result.getConfidence(), result.hasMarkingEvidence());
         }
 
         return result;
+    }
+
+    /**
+     * Check if there are Mapillary road marking detections near a way.
+     * Returns false if the Mapillary check is disabled or no data is loaded.
+     */
+    private boolean hasNearbyMarkings(Way way) {
+        if (!Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)
+                || !Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_MARKING, true)) {
+            return false;
+        }
+
+        MapillaryDataCache cache = MapillaryDataCache.getInstance();
+        if (!cache.isReady()) {
+            return false;
+        }
+
+        double maxDistance = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_MAPILLARY_MAX_DISTANCE,
+                TIGERReviewPreferences.DEFAULT_MAPILLARY_MAX_DISTANCE);
+
+        List<MarkingDetection> nearby = cache.findNearbyMarkings(way, maxDistance);
+        return !nearby.isEmpty();
     }
 
     /**

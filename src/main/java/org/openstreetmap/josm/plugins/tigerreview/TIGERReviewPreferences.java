@@ -56,8 +56,14 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for stripping all tiger:* tags on fully verified roads */
     public static final String PREF_STRIP_TIGER_TAGS = "tigerreview.fix.stripTigerTags";
 
-    /** Preference key for enabling Mapillary speed limit check */
+    /** Preference key for enabling Mapillary data download (master toggle) */
     public static final String PREF_ENABLE_MAPILLARY_CHECK = "tigerreview.check.mapillary";
+
+    /** Preference key for enabling Mapillary speed limit analysis */
+    public static final String PREF_ENABLE_MAPILLARY_SPEED = "tigerreview.check.mapillary.speed";
+
+    /** Preference key for enabling Mapillary road marking surface corroboration */
+    public static final String PREF_ENABLE_MAPILLARY_MARKING = "tigerreview.check.mapillary.marking";
 
     /** Preference key for Mapillary API token */
     public static final String PREF_MAPILLARY_API_KEY = "tigerreview.mapillary.apiKey";
@@ -95,6 +101,8 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox stripTigerTagsCheckBox;
     private JTextField additionalBotUsernamesField;
     private JCheckBox mapillaryCheckBox;
+    private JCheckBox mapillarySpeedCheckBox;
+    private JCheckBox mapillaryMarkingCheckBox;
     private JTextField mapillaryApiKeyField;
     private JSpinner mapillaryDistanceSpinner;
 
@@ -218,19 +226,40 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         outerGbc.gridy = 2;
         outerPanel.add(fixPanel, outerGbc);
 
-        // === Speed Limit (Mapillary) Section ===
+        // === Mapillary (US only) Section ===
         JPanel mapillaryPanel = new JPanel(new GridBagLayout());
-        mapillaryPanel.setBorder(BorderFactory.createTitledBorder(tr("Speed Limit (Mapillary)")));
+        mapillaryPanel.setBorder(BorderFactory.createTitledBorder(tr("Mapillary (US only)")));
         gbc = new GridBagConstraints();
         gbc.insets = new Insets(3, 5, 3, 5);
         gbc.anchor = GridBagConstraints.WEST;
         row = 0;
 
-        mapillaryCheckBox = new JCheckBox(tr("Mapillary speed limit check (US only)"));
+        mapillaryCheckBox = new JCheckBox(tr("Enable Mapillary data download"));
         mapillaryCheckBox.setToolTipText(
-                tr("Download speed limit sign detections from Mapillary for US areas. Must be enabled before downloading data."));
+                tr("Download detections from Mapillary for US areas. Must be enabled before downloading data."));
         mapillaryCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_MAPILLARY_CHECK, false));
         addCheckBox(mapillaryPanel, gbc, row++, mapillaryCheckBox);
+
+        mapillarySpeedCheckBox = new JCheckBox(tr("Speed limit signs"));
+        mapillarySpeedCheckBox.setToolTipText(
+                tr("Use Mapillary speed limit sign detections to suggest or verify maxspeed tags"));
+        mapillarySpeedCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_MAPILLARY_SPEED, true));
+        mapillarySpeedCheckBox.setEnabled(mapillaryCheckBox.isSelected());
+        addIndentedCheckBox(mapillaryPanel, gbc, row++, mapillarySpeedCheckBox);
+
+        mapillaryMarkingCheckBox = new JCheckBox(tr("Road markings (surface corroboration)"));
+        mapillaryMarkingCheckBox.setToolTipText(
+                tr("Use Mapillary road marking detections (lane lines, stop lines, crosswalks) to corroborate paved surface suggestions"));
+        mapillaryMarkingCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_MAPILLARY_MARKING, true));
+        mapillaryMarkingCheckBox.setEnabled(mapillaryCheckBox.isSelected());
+        addIndentedCheckBox(mapillaryPanel, gbc, row++, mapillaryMarkingCheckBox);
+
+        // Enable/disable sub-checkboxes when master toggle changes
+        mapillaryCheckBox.addActionListener(e -> {
+            boolean enabled = mapillaryCheckBox.isSelected();
+            mapillarySpeedCheckBox.setEnabled(enabled);
+            mapillaryMarkingCheckBox.setEnabled(enabled);
+        });
 
         String currentApiKey = Config.getPref().get(PREF_MAPILLARY_API_KEY, "");
         mapillaryApiKeyField = new JTextField(currentApiKey, 20);
@@ -246,9 +275,9 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 new SpinnerNumberModel(currentMapillaryDistance, 5.0, 100.0, 5.0));
         mapillaryDistanceSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
         addLabeledRow(mapillaryPanel, gbc, row++,
-                tr("Sign matching distance (m):"), mapillaryDistanceSpinner,
+                tr("Matching distance (m):"), mapillaryDistanceSpinner,
                 tr("(default: {0})", DEFAULT_MAPILLARY_MAX_DISTANCE),
-                tr("Maximum distance to match a detected speed limit sign to a road"));
+                tr("Maximum distance to match a Mapillary detection to a road"));
 
         outerGbc.gridy = 3;
         outerPanel.add(mapillaryPanel, outerGbc);
@@ -267,6 +296,17 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         gbc.gridy = row;
         gbc.gridwidth = 4;
         panel.add(checkBox, gbc);
+        gbc.gridwidth = 1;
+    }
+
+    private static void addIndentedCheckBox(JPanel panel, GridBagConstraints gbc, int row, JCheckBox checkBox) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 4;
+        Insets original = gbc.insets;
+        gbc.insets = new Insets(original.top, original.left + 20, original.bottom, original.right);
+        panel.add(checkBox, gbc);
+        gbc.insets = original;
         gbc.gridwidth = 1;
     }
 
@@ -312,6 +352,8 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
 
         // Save Mapillary settings
         Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_CHECK, mapillaryCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_SPEED, mapillarySpeedCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_MARKING, mapillaryMarkingCheckBox.isSelected());
         Config.getPref().put(PREF_MAPILLARY_API_KEY, mapillaryApiKeyField.getText().trim());
         Config.getPref().putDouble(PREF_MAPILLARY_MAX_DISTANCE, (Double) mapillaryDistanceSpinner.getValue());
 

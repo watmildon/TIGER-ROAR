@@ -8,6 +8,7 @@ import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.data.osm.DataSet;
 import org.openstreetmap.josm.data.osm.Node;
+import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.MarkingDetection;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.SpeedLimitDetection;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataCache;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadClient.NadAddress;
@@ -35,7 +36,9 @@ final class TestDataExtractor {
 
     private static final String TAG_TEST_NAD = "_test__NAD";
     private static final String TAG_TEST_MAPILLARY = "_test__Mapillary";
+    private static final String TAG_TEST_MAPILLARY_MARKING = "_test__Mapillary_marking";
     private static final String TAG_TEST_SPEED = "_test__speed";
+    private static final String TAG_TEST_MARKING_VALUE = "_test__marking_value";
     private static final String TAG_TEST_ID = "_test__id";
 
     private static int autoIdCounter;
@@ -54,6 +57,7 @@ final class TestDataExtractor {
 
         extractNad(ds, bounds);
         extractMapillary(ds, bounds);
+        extractMapillaryMarkings(ds, bounds);
     }
 
     /**
@@ -142,6 +146,42 @@ final class TestDataExtractor {
         }
 
         // Remove fake nodes from DataSet (after iteration)
+        for (Node node : toRemove) {
+            ds.removePrimitive(node);
+        }
+    }
+
+    private static void extractMapillaryMarkings(DataSet ds, Bounds bounds) {
+        List<MarkingDetection> markings = new ArrayList<>();
+        List<Node> toRemove = new ArrayList<>();
+
+        for (Node node : ds.getNodes()) {
+            if (!"yes".equals(node.get(TAG_TEST_MAPILLARY_MARKING))) {
+                continue;
+            }
+            if (!node.isLatLonKnown()) {
+                continue;
+            }
+
+            String markingValue = node.get(TAG_TEST_MARKING_VALUE);
+            if (markingValue == null || markingValue.isEmpty()) {
+                markingValue = "marking--discrete--stop-line";
+            }
+
+            String id = node.get(TAG_TEST_ID);
+            if (id == null || id.isEmpty()) {
+                id = "test-marking-" + (++autoIdCounter);
+            }
+
+            markings.add(new MarkingDetection(id, node.getCoor(), markingValue));
+            toRemove.add(node);
+        }
+
+        if (!markings.isEmpty()) {
+            MapillaryDataCache.getInstance().loadMarkings(markings, bounds);
+            Config.getPref().putBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, true);
+        }
+
         for (Node node : toRemove) {
             ds.removePrimitive(node);
         }

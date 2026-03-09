@@ -497,7 +497,8 @@ public class TIGERReviewDialog extends ToggleDialog
         if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)) {
             MapillaryDataCache cache = MapillaryDataCache.getInstance();
             if (cache.isReady()) {
-                title += " (Mapillary: " + cache.getDetectionCount() + " signs)";
+                title += " (Mapillary: " + cache.getDetectionCount() + " signs, "
+                        + cache.getMarkingCount() + " markings)";
             } else if (cache.getErrorMessage() != null) {
                 title += " (Mapillary: error)";
             } else {

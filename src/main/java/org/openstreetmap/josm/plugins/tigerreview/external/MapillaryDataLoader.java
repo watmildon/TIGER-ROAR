@@ -17,6 +17,8 @@ import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewPreferences;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.MapillaryQueryResult;
+import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.MarkingDetection;
+import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.MarkingQueryResult;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.SpeedLimitDetection;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.tools.Logging;
@@ -235,15 +237,28 @@ public class MapillaryDataLoader implements LayerManager.LayerChangeListener {
         Logging.info("Starting Mapillary data fetch for bounds: " + bounds);
 
         MapillaryClient client = new MapillaryClient();
-        MapillaryQueryResult result = client.queryDetections(bounds, apiToken);
 
+        // Fetch speed limit sign detections
+        MapillaryQueryResult result = client.queryDetections(bounds, apiToken);
         if (result.isSuccess()) {
             List<SpeedLimitDetection> detections = result.detections();
             MapillaryDataCache.getInstance().load(detections, bounds);
-            Logging.info("Mapillary data loaded: " + detections.size() + " detections");
+            Logging.info("Mapillary data loaded: " + detections.size() + " speed limit detections");
         } else {
             MapillaryDataCache.getInstance().setError(result.errorMessage());
             Logging.warn("Mapillary data load failed: " + result.errorMessage());
+            return;
+        }
+
+        // Fetch road marking detections (for surface corroboration)
+        MarkingQueryResult markingResult = client.queryMarkings(bounds, apiToken);
+        if (markingResult.isSuccess()) {
+            List<MarkingDetection> markings = markingResult.markings();
+            MapillaryDataCache.getInstance().loadMarkings(markings, bounds);
+            Logging.info("Mapillary data loaded: " + markings.size() + " road marking detections");
+        } else {
+            // Marking fetch failure is non-fatal — speed limit data is still usable
+            Logging.warn("Mapillary marking data load failed: " + markingResult.errorMessage());
         }
     }
 

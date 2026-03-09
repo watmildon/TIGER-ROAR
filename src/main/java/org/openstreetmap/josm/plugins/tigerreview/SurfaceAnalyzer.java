@@ -108,6 +108,8 @@ public final class SurfaceAnalyzer {
             } else if (surfaceResult.hasSuggestion()) {
                 String surface = surfaceResult.getSuggestedSurface();
                 ConfidenceTier tier = surfaceResult.getConfidence();
+                String markingSuffix = surfaceResult.hasMarkingEvidence()
+                        ? " + Mapillary markings" : "";
                 if (surfaceResult.isUpgrade()) {
                     int code;
                     String groupMessage;
@@ -127,8 +129,19 @@ public final class SurfaceAnalyzer {
                     }
                     results.add(new SurfaceSuggestion(way, code,
                             tr("Upgrade: {0} \u2192 {1} [{2}]",
-                                    existingSurface, surface, tier.getLabel()),
+                                    existingSurface, surface, tier.getLabel())
+                                    + markingSuffix,
                             groupMessage,
+                            surface));
+                } else if (surfaceResult.hasMarkingEvidence() && tier == ConfidenceTier.LOW
+                        && "paved".equals(surface)
+                        && existingSurface == null) {
+                    // Marking-only suggestion
+                    results.add(new SurfaceSuggestion(way,
+                            SurfaceTest.SURFACE_SUGGESTED_MAPILLARY_MARKING,
+                            tr("Suggest surface=paved (Mapillary road markings) [{0}]",
+                                    tier.getLabel()),
+                            tr("Mapillary road markings"),
                             surface));
                 } else {
                     int code;
@@ -148,7 +161,8 @@ public final class SurfaceAnalyzer {
                         break;
                     }
                     results.add(new SurfaceSuggestion(way, code,
-                            tr("Suggest surface={0} [{1}]", surface, tier.getLabel()),
+                            tr("Suggest surface={0} [{1}]", surface, tier.getLabel())
+                                    + markingSuffix,
                             groupMessage,
                             surface));
                 }

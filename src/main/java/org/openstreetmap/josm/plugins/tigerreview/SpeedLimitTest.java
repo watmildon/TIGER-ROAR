@@ -55,6 +55,7 @@ public class SpeedLimitTest extends Test {
         super.startTest(monitor);
         // Only create the check if Mapillary data is available
         if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)
+                && Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_SPEED, true)
                 && MapillaryDataCache.getInstance().isReady()) {
             speedLimitCheck = new SpeedLimitCheck();
         }

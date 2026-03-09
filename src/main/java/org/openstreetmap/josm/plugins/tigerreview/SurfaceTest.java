@@ -45,6 +45,9 @@ public class SurfaceTest extends Test {
     /** Generic surface upgrade, both ends, mixed quality (medium confidence) */
     public static final int SURFACE_UPGRADE_BOTH_ENDS_MIXED = CODE_PREFIX + 7;
 
+    /** Surface=paved suggested solely from Mapillary road marking detections (low confidence) */
+    public static final int SURFACE_SUGGESTED_MAPILLARY_MARKING = CODE_PREFIX + 8;
+
     /** Group message for all surface warnings in the validator tree */
     private static final String GROUP_MESSAGE = tr("Surface Suggestion");
 
@@ -89,6 +92,7 @@ public class SurfaceTest extends Test {
         } else if (result.hasSuggestion()) {
             String surface = result.getSuggestedSurface();
             ConfidenceTier tier = result.getConfidence();
+            String markingSuffix = result.hasMarkingEvidence() ? " + Mapillary markings" : "";
             if (result.isUpgrade()) {
                 int code;
                 String evidence;
@@ -109,7 +113,17 @@ public class SurfaceTest extends Test {
                 errors.add(TestError.builder(this, Severity.WARNING, code)
                         .message(GROUP_MESSAGE,
                                 marktr("upgrade {0} \u2192 {1} ({2}) [{3}]"),
-                                existingSurface, surface, evidence, tier.getLabel())
+                                existingSurface, surface, evidence + markingSuffix, tier.getLabel())
+                        .primitives(way)
+                        .fix(() -> new ChangePropertyCommand(way, "surface", surface))
+                        .build());
+            } else if (result.hasMarkingEvidence() && tier == ConfidenceTier.LOW
+                    && "paved".equals(surface)
+                    && existingSurface == null) {
+                // Marking-only suggestion: no connected-road evidence
+                errors.add(TestError.builder(this, Severity.WARNING, SURFACE_SUGGESTED_MAPILLARY_MARKING)
+                        .message(GROUP_MESSAGE,
+                                marktr("{0} (Mapillary road markings) [{1}]"), surface, tier.getLabel())
                         .primitives(way)
                         .fix(() -> new ChangePropertyCommand(way, "surface", surface))
                         .build());
@@ -132,7 +146,7 @@ public class SurfaceTest extends Test {
                 }
                 errors.add(TestError.builder(this, Severity.WARNING, code)
                         .message(GROUP_MESSAGE,
-                                marktr("{0} ({1}) [{2}]"), surface, evidence, tier.getLabel())
+                                marktr("{0} ({1}) [{2}]"), surface, evidence + markingSuffix, tier.getLabel())
                         .primitives(way)
                         .fix(() -> new ChangePropertyCommand(way, "surface", surface))
                         .build());
