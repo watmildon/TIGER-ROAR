@@ -93,6 +93,40 @@ class TIGERReviewAnalyzerTest {
         // Class B: Residual tiger:* tags
         assertContainsCode(resultsByTestId, "B1",
                 TIGERReviewTest.TIGER_RESIDUAL_TAGS);
+
+        // Class Q: Etymology / wikidata name evidence tags
+        assertContainsCode(resultsByTestId, "Q1",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY);
+        assertEquals(FixAction.SET_NAME_REVIEWED, resultsByTestId.get("Q1").getFixAction(),
+                "Q1: name:etymology, no alignment → SET_NAME_REVIEWED");
+        assertContainsCode(resultsByTestId, "Q2",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY);
+        assertEquals(FixAction.REMOVE_TAG, resultsByTestId.get("Q2").getFixAction(),
+                "Q2: name:etymology:wikidata + alignment → REMOVE_TAG");
+        assertContainsCode(resultsByTestId, "Q3",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY);
+        assertEquals(FixAction.REMOVE_TAG, resultsByTestId.get("Q3").getFixAction(),
+                "Q3: wikipedia + alignment → REMOVE_TAG");
+        assertContainsCode(resultsByTestId, "Q4",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY);
+        assertEquals(FixAction.SET_NAME_REVIEWED, resultsByTestId.get("Q4").getFixAction(),
+                "Q4: wikidata, no alignment → SET_NAME_REVIEWED");
+        assertContainsCode(resultsByTestId, "Q5",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY);
+        assertEquals(FixAction.REMOVE_TAG, resultsByTestId.get("Q5").getFixAction(),
+                "Q5: wikidata + aerial reviewed → REMOVE_TAG");
+        // Q6: Etymology takes priority over connected road
+        assertContainsCode(resultsByTestId, "Q6",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY);
+
+        // Class R: Post-TIGER node ID detection
+        assertContainsCode(resultsByTestId, "R1",
+                TIGERReviewTest.TIGER_UNNAMED_VERIFIED);
+        assertContainsCode(resultsByTestId, "R2",
+                TIGERReviewTest.TIGER_UNNAMED_VERIFIED);
+        // R3: All old v1 nodes, no user info — should NOT produce a result
+        assertNull(resultsByTestId.get("R3"),
+                "R3: All old v1 nodes should not produce alignment evidence");
     }
 
     @Test

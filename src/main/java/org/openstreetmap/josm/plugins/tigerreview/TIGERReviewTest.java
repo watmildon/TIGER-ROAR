@@ -79,6 +79,12 @@ public class TIGERReviewTest extends Test {
     /** OSM addr:street data along road suggests a different name */
     public static final int TIGER_ADDRESS_NAME_SUGGESTION = CODE_PREFIX + 17;
 
+    /** Name verified via etymology/wikidata/wikipedia tags on the way itself */
+    public static final int TIGER_NAME_VERIFIED_ETYMOLOGY = CODE_PREFIX + 18;
+
+    /** Both NAD and OSM addr:street agree on a different name suggestion */
+    public static final int TIGER_COMBINED_NAME_SUGGESTION = CODE_PREFIX + 19;
+
     /** Accepted values for tiger:reviewed (no error triggered).
      *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
@@ -138,9 +144,13 @@ public class TIGERReviewTest extends Test {
                 TIGERReviewPreferences.DEFAULT_NAD_MAX_DISTANCE);
         String additionalBotUsernames = Config.getPref().get(
                 TIGERReviewPreferences.PREF_ADDITIONAL_BOT_USERNAMES, "");
+        long postTigerNodeIdThreshold = (long) (Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NODE_MIN_POST_TIGER_ID,
+                TIGERReviewPreferences.DEFAULT_NODE_MIN_POST_TIGER_ID) * 1_000_000_000L);
 
         connectedRoadCheck = new ConnectedRoadCheck();
-        nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited, additionalBotUsernames);
+        nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited,
+                additionalBotUsernames, postTigerNodeIdThreshold);
         addressCheck = new AddressCheck(maxAddressDistance);
         nadAddressCheck = new NadAddressCheck(maxNadDistance);
 
@@ -200,18 +210,6 @@ public class TIGERReviewTest extends Test {
 
         // Handle no-fix results (null fixAction) before the switch
         if (result.getFixAction() == null) {
-            if (code == TIGER_NAD_NAME_SUGGESTION) {
-                return TestError.builder(this, Severity.OTHER, code)
-                        .message(GROUP_MESSAGE, marktr("NAD suggests different name [NAD: {0}]"), message)
-                        .primitives(way)
-                        .build();
-            }
-            if (code == TIGER_ADDRESS_NAME_SUGGESTION) {
-                return TestError.builder(this, Severity.OTHER, code)
-                        .message(GROUP_MESSAGE, marktr("Nearby addresses suggest different name [{0}]"), message)
-                        .primitives(way)
-                        .build();
-            }
             if (code == TIGER_REVIEWED_INVALID_VALUE) {
                 return TestError.builder(this, Severity.ERROR, code)
                         .message(GROUP_MESSAGE,
@@ -262,6 +260,26 @@ public class TIGERReviewTest extends Test {
         case SET_ALIGNMENT_REVIEWED:
             return TestError.builder(this, Severity.WARNING, code)
                     .message(GROUP_MESSAGE, marktr("Alignment verified ({0}), name not corroborated"), message)
+                    .primitives(way)
+                    .fix(result.getFixSupplier())
+                    .build();
+        case SUGGEST_NAME:
+            if (code == TIGER_COMBINED_NAME_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD and nearby addresses agree on different name [{0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            if (code == TIGER_NAD_NAME_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD suggests different name [NAD: {0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            return TestError.builder(this, Severity.OTHER, code)
+                    .message(GROUP_MESSAGE, marktr("Nearby addresses suggest different name [{0}]"), message)
                     .primitives(way)
                     .fix(result.getFixSupplier())
                     .build();

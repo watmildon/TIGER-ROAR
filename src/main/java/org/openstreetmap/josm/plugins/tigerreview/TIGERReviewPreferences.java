@@ -53,6 +53,9 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for additional bot/importer usernames (semicolon-delimited) */
     public static final String PREF_ADDITIONAL_BOT_USERNAMES = "tigerreview.node.additionalBotUsernames";
 
+    /** Preference key for minimum node ID to consider post-TIGER (in billions) */
+    public static final String PREF_NODE_MIN_POST_TIGER_ID = "tigerreview.node.minPostTigerId";
+
     /** Preference key for stripping all tiger:* tags on fully verified roads */
     public static final String PREF_STRIP_TIGER_TAGS = "tigerreview.fix.stripTigerTags";
 
@@ -86,6 +89,9 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Default minimum percentage of nodes edited for alignment verification (0.0-1.0) */
     public static final double DEFAULT_NODE_MIN_PERCENTAGE_EDITED = 0.8;
 
+    /** Default minimum node ID (in billions) to consider post-TIGER. 8B ≈ 2021. */
+    public static final double DEFAULT_NODE_MIN_POST_TIGER_ID = 8.0;
+
     /** HTML snippet for a circled info icon rendered inline in Swing labels */
     private static final String INFO_ICON_HTML =
             "<span style='color: #336699; font-size: 12px;'>\u24D8</span>";
@@ -100,6 +106,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox nadCheckBox;
     private JCheckBox stripTigerTagsCheckBox;
     private JTextField additionalBotUsernamesField;
+    private JSpinner postTigerIdSpinner;
     private JCheckBox mapillaryCheckBox;
     private JCheckBox mapillarySpeedCheckBox;
     private JCheckBox mapillaryMarkingCheckBox;
@@ -202,6 +209,15 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 tr("(semicolon-separated)"),
                 tr("Edits by these users don''t count as human review. "
                    + "Built-in: DaveHansenTiger, Milenko, woodpeck_fixbot, balrog-kun, bot-mode"));
+
+        double currentPostTigerId = Config.getPref().getDouble(PREF_NODE_MIN_POST_TIGER_ID, DEFAULT_NODE_MIN_POST_TIGER_ID);
+        postTigerIdSpinner = new JSpinner(new SpinnerNumberModel(currentPostTigerId, 1.0, 15.0, 1.0));
+        postTigerIdSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
+        addLabeledRow(alignmentPanel, gbc, row++,
+                tr("Post-TIGER node ID (billions):"), postTigerIdSpinner,
+                tr("(default: {0}B \u2248 2021)", (int) DEFAULT_NODE_MIN_POST_TIGER_ID),
+                tr("Nodes with IDs above this threshold (in billions) are assumed to be human-created, "
+                   + "even at version 1. OSM assigns IDs sequentially; 8B was reached around 2021."));
 
         outerGbc.gridy = 1;
         outerPanel.add(alignmentPanel, outerGbc);
@@ -349,6 +365,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putDouble(PREF_NODE_MIN_PERCENTAGE_EDITED, (Double) nodePercentageSpinner.getValue() / 100.0);
         Config.getPref().putDouble(PREF_NAD_MAX_DISTANCE, (Double) nadDistanceSpinner.getValue());
         Config.getPref().put(PREF_ADDITIONAL_BOT_USERNAMES, additionalBotUsernamesField.getText().trim());
+        Config.getPref().putDouble(PREF_NODE_MIN_POST_TIGER_ID, (Double) postTigerIdSpinner.getValue());
 
         // Save Mapillary settings
         Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_CHECK, mapillaryCheckBox.isSelected());

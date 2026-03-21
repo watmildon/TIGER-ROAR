@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -333,6 +334,20 @@ public class TIGERReviewDialog extends ToggleDialog
 
     private void rebuildSingleTree(DefaultMutableTreeNode root, JTree tree,
             List<? extends TreeDisplayable> results) {
+        // Save expanded state of category nodes by group message
+        Set<String> collapsedGroups = new HashSet<>();
+        for (int i = 0; i < root.getChildCount(); i++) {
+            DefaultMutableTreeNode categoryNode = (DefaultMutableTreeNode) root.getChildAt(i);
+            String label = categoryNode.getUserObject().toString();
+            // Strip the count suffix " (N)" to get the group key
+            String groupKey = label.replaceAll(" \\(\\d+\\)$", "");
+            TreePath path = new TreePath(new Object[]{root, categoryNode});
+            if (tree.isCollapsed(path)) {
+                collapsedGroups.add(groupKey);
+            }
+        }
+        boolean hadChildren = root.getChildCount() > 0;
+
         root.removeAllChildren();
 
         // Group results by groupMessage
@@ -352,7 +367,18 @@ public class TIGERReviewDialog extends ToggleDialog
         for (Map.Entry<String, List<TreeDisplayable>> entry : sortedGroups) {
             DefaultMutableTreeNode categoryNode = new DefaultMutableTreeNode(
                     entry.getKey() + " (" + entry.getValue().size() + ")");
-            for (TreeDisplayable result : entry.getValue()) {
+            List<TreeDisplayable> sorted = new ArrayList<>(entry.getValue());
+            sorted.sort((a, b) -> {
+                String nameA = a.getWay().get("name");
+                String nameB = b.getWay().get("name");
+                if (nameA != null && nameB != null) {
+                    return nameA.compareToIgnoreCase(nameB);
+                }
+                if (nameA != null) return -1;
+                if (nameB != null) return 1;
+                return Long.compare(a.getWay().getId(), b.getWay().getId());
+            });
+            for (TreeDisplayable result : sorted) {
                 categoryNode.add(new DefaultMutableTreeNode(result));
             }
             root.add(categoryNode);
@@ -360,9 +386,16 @@ public class TIGERReviewDialog extends ToggleDialog
 
         ((DefaultTreeModel) tree.getModel()).reload();
 
-        // Expand all category nodes
-        for (int i = 0; i < tree.getRowCount(); i++) {
-            tree.expandRow(i);
+        // Restore expansion state: expand all by default on first build,
+        // otherwise restore previous collapsed/expanded state
+        for (int i = 0; i < root.getChildCount(); i++) {
+            DefaultMutableTreeNode categoryNode = (DefaultMutableTreeNode) root.getChildAt(i);
+            String label = categoryNode.getUserObject().toString();
+            String groupKey = label.replaceAll(" \\(\\d+\\)$", "");
+            TreePath path = new TreePath(new Object[]{root, categoryNode});
+            if (!hadChildren || !collapsedGroups.contains(groupKey)) {
+                tree.expandPath(path);
+            }
         }
     }
 
@@ -374,40 +407,72 @@ public class TIGERReviewDialog extends ToggleDialog
 
     /**
      * Priority for sorting groups in the tree.
-     * Lower number = higher in the list (most actionable/complete first).
+     * Lower number = higher in the list.
+     *
+     * TIGER Review tab ordering:
+     *   0  Residual TIGER tags (trivial cleanup)
+     *   1  Unnamed road verified (trivial, no name to worry about)
+     *   2  Fully verified (name + alignment, just remove tag)
+     *   3  Name upgrade (was name-only, alignment now confirmed)
+     *   4  Name verified, alignment needs review (fix sets tiger:reviewed=name)
+     *   5  Invalid tiger:reviewed value (needs manual attention)
+     *   6  Combined name suggestion (NAD + addresses agree, informational)
+     *   7  Individual name suggestions (informational, no fix)
+     *   8  Alignment verified, name not corroborated (fix sets tiger:reviewed=aerial)
+     *
+     * Surface tab ordering:
+     *   0-5  Surface suggestions by confidence (high to low)
+     *   6    Surface conflict (informational)
+     *
+     * Speed Limit tab ordering:
+     *   0-3  Speed suggestions by confidence (high to low)
      */
     private static int getGroupPriority(TreeDisplayable result) {
         int code = result.getCode();
-        // Fully verified (all name verification codes when paired with alignment)
+
+        // --- TIGER Review tab ---
+
+        if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) return 0;
+        if (code == TIGERReviewTest.TIGER_UNNAMED_VERIFIED) return 1;
+
+        // Fully verified and name-only share warning codes; distinguish by fix action
         if (code == TIGERReviewTest.TIGER_FULLY_VERIFIED
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_BOTH_ENDS
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ONE_END
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS
-                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD) {
-            // Fully verified and name-only share codes; distinguish by fix action
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY) {
             if (result instanceof ReviewResult rr
                     && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
-                return 0; // Fully verified
+                return 2; // Fully verified
             }
-            return 3; // Name verified, alignment needs review
+            return 4; // Name verified, alignment needs review
         }
-        if (code == TIGERReviewTest.TIGER_NAME_UPGRADE) return 1;
-        if (code == TIGERReviewTest.TIGER_UNNAMED_VERIFIED) return 2;
-        if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 4;
-        if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) return 5;
-        if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS) return 6;
-        if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED) return 7;
-        if (code == SurfaceTest.SURFACE_SUGGESTED_ONE_END) return 8;
-        if (code == SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS) return 9;
-        if (code == SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS_MIXED) return 10;
-        if (code == SurfaceTest.SURFACE_UPGRADE_ONE_END) return 11;
-        if (code == SurfaceTest.SURFACE_CONFLICT) return 12;
-        if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 13;
-        if (code == SpeedLimitTest.SPEED_MISSING_MULTI_SIGN) return 14;
-        if (code == SpeedLimitTest.SPEED_MISSING) return 15;
-        if (code == SpeedLimitTest.SPEED_CONFLICT_MULTI_SIGN) return 16;
-        if (code == SpeedLimitTest.SPEED_CONFLICT) return 17;
-        return 18;
+        if (code == TIGERReviewTest.TIGER_NAME_UPGRADE) return 3;
+        if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 5;
+        if (code == TIGERReviewTest.TIGER_COMBINED_NAME_SUGGESTION) return 6;
+        if (code == TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION
+                || code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION) return 7;
+        if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 8;
+
+        // --- Surface tab ---
+
+        if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS) return 0;
+        if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED) return 1;
+        if (code == SurfaceTest.SURFACE_SUGGESTED_ONE_END) return 2;
+        if (code == SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS) return 3;
+        if (code == SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS_MIXED) return 4;
+        if (code == SurfaceTest.SURFACE_UPGRADE_ONE_END) return 5;
+        if (code == SurfaceTest.SURFACE_CONFLICT) return 6;
+
+        // --- Speed Limit tab ---
+
+        if (code == SpeedLimitTest.SPEED_MISSING_MULTI_SIGN) return 0;
+        if (code == SpeedLimitTest.SPEED_MISSING) return 1;
+        if (code == SpeedLimitTest.SPEED_CONFLICT_MULTI_SIGN) return 2;
+        if (code == SpeedLimitTest.SPEED_CONFLICT) return 3;
+
+        return 99;
     }
 
     // --- Fix actions ---
