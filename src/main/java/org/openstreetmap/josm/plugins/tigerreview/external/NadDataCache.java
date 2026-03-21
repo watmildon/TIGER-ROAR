@@ -22,6 +22,7 @@ import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.CellRange;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.GridCell;
+import org.openstreetmap.josm.plugins.tigerreview.StreetNameUtils;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadClient.NadAddress;
 import org.openstreetmap.josm.tools.Logging;
 
@@ -213,7 +214,7 @@ public class NadDataCache {
         CellRange range = CellRange.of(en1, en2, maxDistance);
 
         for (NadAddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (name.equalsIgnoreCase(addr.streetName())) {
+            if (StreetNameUtils.namesMatch(name, addr.streetName())) {
                 double dist = SpatialUtils.distanceToSegment(addr.location(), en1, en2);
                 if (dist <= maxDistance) {
                     assignedAddresses.add(addr);
@@ -330,7 +331,7 @@ public class NadDataCache {
         CellRange range = CellRange.of(en1, en2, maxDistance);
 
         for (NadAddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (name.equalsIgnoreCase(addr.streetName())) {
+            if (StreetNameUtils.namesMatch(name, addr.streetName())) {
                 double dist = SpatialUtils.distanceToSegment(addr.location(), en1, en2);
                 if (dist <= maxDistance) {
                     return true;
@@ -410,8 +411,8 @@ public class NadDataCache {
                 continue;
             }
 
-            // Skip exact name matches (case-insensitive)
-            if (osmName.equalsIgnoreCase(addr.streetName())) {
+            // Skip name matches (exact or abbreviation-expanded)
+            if (StreetNameUtils.namesMatch(osmName, addr.streetName())) {
                 continue;
             }
 

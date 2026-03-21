@@ -20,6 +20,7 @@ import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.CellRange;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.GridCell;
+import org.openstreetmap.josm.plugins.tigerreview.StreetNameUtils;
 
 /**
  * Checks if a road's name is corroborated by nearby address data.
@@ -255,8 +256,8 @@ public class AddressCheck {
         CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
         for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (name.equalsIgnoreCase(addr.streetName)) {
-                continue; // skip matches
+            if (StreetNameUtils.namesMatch(name, addr.streetName)) {
+                continue; // skip matches (exact or abbreviation-expanded)
             }
 
             if (assignedAddresses.contains(addr)) {
@@ -278,7 +279,7 @@ public class AddressCheck {
         CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
         for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (name.equalsIgnoreCase(addr.streetName)) {
+            if (StreetNameUtils.namesMatch(name, addr.streetName)) {
                 double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
                 if (dist <= scaledMaxDistance) {
                     assignedAddresses.add(addr);
@@ -304,7 +305,7 @@ public class AddressCheck {
         CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
         for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (name.equalsIgnoreCase(addr.streetName)) {
+            if (StreetNameUtils.namesMatch(name, addr.streetName)) {
                 double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
                 if (dist <= scaledMaxDistance) {
                     return true;
