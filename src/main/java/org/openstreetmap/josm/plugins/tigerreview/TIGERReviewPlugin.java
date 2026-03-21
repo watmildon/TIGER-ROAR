@@ -23,7 +23,8 @@ public class TIGERReviewPlugin extends Plugin {
         OsmValidator.addTest(SurfaceTest.class);
         OsmValidator.addTest(SpeedLimitTest.class);
 
-        // Register external data loaders to listen for layer changes
+        // Register name snapshot tracker and external data loaders
+        NameSnapshotTracker.getInstance().register();
         NadDataLoader.getInstance().register();
         MapillaryDataLoader.getInstance().register();
     }

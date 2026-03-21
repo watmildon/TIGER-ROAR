@@ -272,22 +272,26 @@ public final class TIGERReviewAnalyzer {
         String name = way.get("name");
         boolean hasName = name != null && !name.isEmpty();
 
-        // Gather name evidence (priority: etymology > address > NAD > connectivity)
+        // Gather name evidence (priority: user edit > etymology > address > NAD > connectivity)
         ConnectionType connectionType = ConnectionType.NONE;
         boolean addressMatch = false;
         boolean nadMatch = false;
         boolean etymologyMatch = false;
+        boolean userEditMatch = false;
         String nadMatchedName = null; // NAD street name (differs from OSM name for fuzzy matches)
         if (hasName) {
-            etymologyMatch = hasNameEvidenceTags(way);
-            if (!etymologyMatch && addressCheckEnabled) {
+            userEditMatch = NameSnapshotTracker.getInstance().isNameModified(way);
+            if (!userEditMatch) {
+                etymologyMatch = hasNameEvidenceTags(way);
+            }
+            if (!userEditMatch && !etymologyMatch && addressCheckEnabled) {
                 addressMatch = addressCheck.isNameCorroborated(way, name);
             }
-            if (!etymologyMatch && !addressMatch && nadCheckEnabled) {
+            if (!userEditMatch && !etymologyMatch && !addressMatch && nadCheckEnabled) {
                 nadMatchedName = nadAddressCheck.findMatchingName(way, name);
                 nadMatch = nadMatchedName != null;
             }
-            if (!etymologyMatch && !addressMatch && !nadMatch && connectedRoadCheckEnabled) {
+            if (!userEditMatch && !etymologyMatch && !addressMatch && !nadMatch && connectedRoadCheckEnabled) {
                 connectionType = connectedRoadCheck.checkConnection(way, name);
             }
         }
@@ -296,7 +300,8 @@ public final class TIGERReviewAnalyzer {
         // check if nearby addresses suggest a different name
         String addressSuggestedName = null;
         String nadSuggestedName = null;
-        if (hasName && !etymologyMatch && connectionType == ConnectionType.NONE && !addressMatch && !nadMatch) {
+        if (hasName && !userEditMatch && !etymologyMatch && connectionType == ConnectionType.NONE
+                && !addressMatch && !nadMatch) {
             // Check OSM addr:street data first
             if (addressCheckEnabled) {
                 addressSuggestedName = addressCheck.findSuggestedName(way, name);
@@ -311,21 +316,24 @@ public final class TIGERReviewAnalyzer {
         AlignmentResult alignmentResult = nodeVersionCheckEnabled
                 ? nodeVersionCheck.checkAlignment(way)
                 : new AlignmentResult(AlignmentEvidence.NONE, 0, 0);
-        boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch || nadMatch || etymologyMatch;
+        boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch
+                || nadMatch || etymologyMatch || userEditMatch;
 
         // Apply decision matrix
         if (hasName) {
             if (nameCorroborated && alignmentResult.isVerified()) {
                 String message = buildFullyVerifiedMessage(connectionType, addressMatch, nadMatch, etymologyMatch,
-                        nadMatchedName, name, alignmentResult);
-                int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch);
+                        userEditMatch, nadMatchedName, name, alignmentResult);
+                int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch,
+                        userEditMatch);
                 results.add(new ReviewResult(way, code, message,
                         tr("Fully verified"),
                         FixAction.REMOVE_TAG, stripTigerTags));
             } else if (nameCorroborated) {
                 String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch,
-                        nadMatchedName, name);
-                int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch);
+                        userEditMatch, nadMatchedName, name);
+                int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch,
+                        userEditMatch);
                 results.add(new ReviewResult(way, code, nameEvidence,
                         tr("Name verified, alignment needs review"),
                         FixAction.SET_NAME_REVIEWED, stripTigerTags));
@@ -397,36 +405,42 @@ public final class TIGERReviewAnalyzer {
             return;
         }
 
-        // Look for name corroboration (priority: etymology > address > NAD > connectivity)
+        // Look for name corroboration (priority: user edit > etymology > address > NAD > connectivity)
         ConnectionType connectionType = ConnectionType.NONE;
         boolean addressMatch = false;
         boolean nadMatch = false;
         boolean etymologyMatch = false;
+        boolean userEditMatch = false;
         String nadMatchedName = null;
 
-        etymologyMatch = hasNameEvidenceTags(way);
-        if (!etymologyMatch && addressCheckEnabled) {
+        userEditMatch = NameSnapshotTracker.getInstance().isNameModified(way);
+        if (!userEditMatch) {
+            etymologyMatch = hasNameEvidenceTags(way);
+        }
+        if (!userEditMatch && !etymologyMatch && addressCheckEnabled) {
             addressMatch = addressCheck.isNameCorroborated(way, name);
         }
-        if (!etymologyMatch && !addressMatch && nadCheckEnabled) {
+        if (!userEditMatch && !etymologyMatch && !addressMatch && nadCheckEnabled) {
             nadMatchedName = nadAddressCheck.findMatchingName(way, name);
             nadMatch = nadMatchedName != null;
         }
-        if (!etymologyMatch && !addressMatch && !nadMatch && connectedRoadCheckEnabled) {
+        if (!userEditMatch && !etymologyMatch && !addressMatch && !nadMatch && connectedRoadCheckEnabled) {
             connectionType = connectedRoadCheck.checkConnection(way, name);
         }
 
-        boolean nameCorroborated = etymologyMatch || addressMatch || nadMatch || connectionType != ConnectionType.NONE;
+        boolean nameCorroborated = etymologyMatch || addressMatch || nadMatch
+                || connectionType != ConnectionType.NONE || userEditMatch;
 
         if (nameCorroborated) {
             // Name now corroborated + alignment already reviewed = fully verified
             String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch,
-                    nadMatchedName, name);
-            int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch);
+                    userEditMatch, nadMatchedName, name);
+            int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch, userEditMatch);
             results.add(new ReviewResult(way, code, nameEvidence,
                     tr("Fully verified"),
                     FixAction.REMOVE_TAG, stripTigerTags));
-        } else if (!etymologyMatch && connectionType == ConnectionType.NONE && !addressMatch && !nadMatch) {
+        } else if (!etymologyMatch && connectionType == ConnectionType.NONE
+                && !addressMatch && !nadMatch && !userEditMatch) {
             // No name evidence at all — check if nearby addresses suggest a different name
             String addrSuggestedName = addressCheckEnabled ? addressCheck.findSuggestedName(way, name) : null;
             String nadSuggestedName2 = nadCheckEnabled ? nadAddressCheck.findSuggestedName(way, name) : null;
@@ -521,8 +535,10 @@ public final class TIGERReviewAnalyzer {
     // --- Message building utilities ---
 
     static String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch, boolean nadMatch,
-            boolean etymologyMatch, String nadMatchedName, String osmName) {
-        if (etymologyMatch) {
+            boolean etymologyMatch, boolean userEditMatch, String nadMatchedName, String osmName) {
+        if (userEditMatch) {
+            return tr("name modified by user");
+        } else if (etymologyMatch) {
             return tr("etymology/wikidata tags");
         } else if (addressMatch) {
             return tr("nearby addr:street");
@@ -548,8 +564,8 @@ public final class TIGERReviewAnalyzer {
 
     static String buildFullyVerifiedMessage(ConnectionType connectionType,
             boolean addressMatch, boolean nadMatch, boolean etymologyMatch,
-            String nadMatchedName, String osmName, AlignmentResult alignmentResult) {
-        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch, nadMatchedName, osmName);
+            boolean userEditMatch, String nadMatchedName, String osmName, AlignmentResult alignmentResult) {
+        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch, userEditMatch, nadMatchedName, osmName);
         String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
         return tr("name: {0}, alignment: {1}", nameEvidence, alignmentEvidence);
     }
@@ -581,8 +597,10 @@ public final class TIGERReviewAnalyzer {
     }
 
     static int getNameVerificationCode(ConnectionType connectionType, boolean addressMatch, boolean nadMatch,
-            boolean etymologyMatch) {
-        if (etymologyMatch) {
+            boolean etymologyMatch, boolean userEditMatch) {
+        if (userEditMatch) {
+            return TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT;
+        } else if (etymologyMatch) {
             return TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY;
         } else if (addressMatch) {
             return TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS;
@@ -605,7 +623,8 @@ public final class TIGERReviewAnalyzer {
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ONE_END
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD
-                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY) {
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT) {
             // These codes are used for both fully verified and name-only results,
             // so we rely on the groupMessage field instead
             return null;

@@ -85,6 +85,9 @@ public class TIGERReviewTest extends Test {
     /** Both NAD and OSM addr:street agree on a different name suggestion */
     public static final int TIGER_COMBINED_NAME_SUGGESTION = CODE_PREFIX + 19;
 
+    /** Name verified because the current user modified the name tag */
+    public static final int TIGER_NAME_VERIFIED_USER_EDIT = CODE_PREFIX + 20;
+
     /** Accepted values for tiger:reviewed (no error triggered).
      *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(

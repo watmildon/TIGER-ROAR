@@ -40,6 +40,7 @@ final class TestDataExtractor {
     private static final String TAG_TEST_SPEED = "_test__speed";
     private static final String TAG_TEST_MARKING_VALUE = "_test__marking_value";
     private static final String TAG_TEST_ID = "_test__id";
+    private static final String TAG_TEST_ORIGINAL_NAME = "_test__original_name";
 
     private static int autoIdCounter;
 
@@ -55,17 +56,41 @@ final class TestDataExtractor {
     static void extractAndLoadCaches(DataSet ds) {
         Bounds bounds = computeBounds(ds);
 
+        extractNameSnapshots(ds);
         extractNad(ds, bounds);
         extractMapillary(ds, bounds);
         extractMapillaryMarkings(ds, bounds);
     }
 
     /**
-     * Clear both external data caches.
+     * Clear all external data caches and the name snapshot tracker.
      */
     static void clearCaches() {
         NadDataCache.getInstance().clear();
         MapillaryDataCache.getInstance().clear();
+        NameSnapshotTracker.getInstance().clear();
+    }
+
+    /**
+     * Extract {@code _test__original_name} tags from ways and populate the
+     * {@link NameSnapshotTracker} with the original names. Ways without the
+     * tag get their current name snapshotted (unchanged).
+     *
+     * <p>The tag is removed from the way after extraction.</p>
+     */
+    private static void extractNameSnapshots(DataSet ds) {
+        NameSnapshotTracker tracker = NameSnapshotTracker.getInstance();
+
+        for (org.openstreetmap.josm.data.osm.Way way : ds.getWays()) {
+            String originalName = way.get(TAG_TEST_ORIGINAL_NAME);
+            if (originalName != null) {
+                tracker.putOriginalName(way, originalName);
+                way.remove(TAG_TEST_ORIGINAL_NAME);
+            }
+        }
+
+        // Snapshot remaining ways that didn't have an override
+        tracker.snapshotNames(ds);
     }
 
     private static void extractNad(DataSet ds, Bounds bounds) {

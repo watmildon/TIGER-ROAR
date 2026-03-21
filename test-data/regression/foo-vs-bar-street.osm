@@ -34,5 +34,6 @@
     <tag k='highway' v='residential' />
     <tag k='name' v='Foo Street' />
     <tag k='tiger:reviewed' v='no' />
+    <tag k='_test__original_name' v='Old Foo Street' />
   </way>
 </osm>

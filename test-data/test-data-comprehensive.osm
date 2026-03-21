@@ -1768,4 +1768,209 @@
     <tag k='tiger:reviewed' v='no'/>
   </way>
 
+
+  <!-- ================================================================ -->
+  <!-- Q. ETYMOLOGY / WIKIDATA NAME EVIDENCE TAGS                       -->
+  <!-- ================================================================ -->
+
+
+  <!-- Q1: tiger:reviewed=no with name:etymology tag — name corroborated via self-evidence
+       Expected: TIGER_NAME_VERIFIED_ETYMOLOGY (19939018), SET_NAME_REVIEWED
+       (no alignment evidence, so name-only) -->
+
+  <node id='-2701' lat='40.4000' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-2702' lat='40.4005' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <way id='-20701' version='1'>
+    <nd ref='-2701'/><nd ref='-2702'/>
+    <tag k='_test_id' v='Q1'/>
+    <tag k='_test_note' v='Has name:etymology tag. No alignment evidence. Expect TIGER_NAME_VERIFIED_ETYMOLOGY, SET_NAME_REVIEWED.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Washington Street'/>
+    <tag k='name:etymology' v='George Washington'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- Q2: tiger:reviewed=no with name:etymology:wikidata tag + alignment evidence
+       Expected: TIGER_NAME_VERIFIED_ETYMOLOGY (19939018), REMOVE_TAG (fully verified) -->
+
+  <node id='-2711' lat='40.4020' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='4'/><tag k='__TEST_USER' v='mapper_q2'/>
+  </node>
+  <node id='-2712' lat='40.4025' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_q2'/>
+  </node>
+
+  <way id='-20711' version='1'>
+    <nd ref='-2711'/><nd ref='-2712'/>
+    <tag k='_test_id' v='Q2'/>
+    <tag k='_test_note' v='Has name:etymology:wikidata tag + all nodes human-edited. Expect TIGER_NAME_VERIFIED_ETYMOLOGY, REMOVE_TAG (fully verified).'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Lincoln Avenue'/>
+    <tag k='name:etymology:wikidata' v='Q91'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- Q3: tiger:reviewed=no with wikipedia tag + alignment evidence
+       Expected: TIGER_NAME_VERIFIED_ETYMOLOGY (19939018), REMOVE_TAG (fully verified) -->
+
+  <node id='-2721' lat='40.4040' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='3'/><tag k='__TEST_USER' v='mapper_q3'/>
+  </node>
+  <node id='-2722' lat='40.4045' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='5'/><tag k='__TEST_USER' v='mapper_q3'/>
+  </node>
+
+  <way id='-20721' version='1'>
+    <nd ref='-2721'/><nd ref='-2722'/>
+    <tag k='_test_id' v='Q3'/>
+    <tag k='_test_note' v='Has wikipedia tag + all nodes human-edited. Expect TIGER_NAME_VERIFIED_ETYMOLOGY, REMOVE_TAG (fully verified).'/>
+    <tag k='highway' v='secondary'/>
+    <tag k='name' v='Route 66'/>
+    <tag k='wikipedia' v='en:U.S. Route 66'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- Q4: tiger:reviewed=no with wikidata tag, no alignment evidence
+       Expected: TIGER_NAME_VERIFIED_ETYMOLOGY (19939018), SET_NAME_REVIEWED -->
+
+  <node id='-2731' lat='40.4060' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-2732' lat='40.4065' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+
+  <way id='-20731' version='1'>
+    <nd ref='-2731'/><nd ref='-2732'/>
+    <tag k='_test_id' v='Q4'/>
+    <tag k='_test_note' v='Has wikidata tag. No alignment evidence. Expect TIGER_NAME_VERIFIED_ETYMOLOGY, SET_NAME_REVIEWED.'/>
+    <tag k='highway' v='tertiary'/>
+    <tag k='name' v='Broadway'/>
+    <tag k='wikidata' v='Q190073'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- Q5: tiger:reviewed=aerial with wikidata tag — alignment already reviewed, name now corroborated
+       Expected: TIGER_NAME_VERIFIED_ETYMOLOGY (19939018), REMOVE_TAG (fully verified) -->
+
+  <node id='-2741' lat='40.4080' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+  <node id='-2742' lat='40.4085' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <way id='-20741' version='1'>
+    <nd ref='-2741'/><nd ref='-2742'/>
+    <tag k='_test_id' v='Q5'/>
+    <tag k='_test_note' v='tiger:reviewed=aerial + wikidata tag. Alignment already reviewed, name now corroborated. Expect REMOVE_TAG (fully verified).'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Martin Luther King Jr Boulevard'/>
+    <tag k='wikidata' v='Q8027'/>
+    <tag k='tiger:reviewed' v='aerial'/>
+  </way>
+
+
+  <!-- Q6: Etymology takes priority over connected road corroboration
+       (etymology check runs first and short-circuits)
+       Expected: TIGER_NAME_VERIFIED_ETYMOLOGY, not ONE_END -->
+
+  <node id='-2751' lat='40.4100' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-2752' lat='40.4105' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/><tag k='__TEST_USER' v='DaveHansenTiger'/>
+  </node>
+  <node id='-2753' lat='40.4110' lon='-75.1000'>
+    <tag k='__TEST_VERSION' v='1'/>
+  </node>
+
+  <way id='-20751' version='1'>
+    <nd ref='-2751'/><nd ref='-2752'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Priority Test Road'/>
+  </way>
+
+  <way id='-20752' version='1'>
+    <nd ref='-2752'/><nd ref='-2753'/>
+    <tag k='_test_id' v='Q6'/>
+    <tag k='_test_note' v='Has both wikidata AND connected road evidence. Etymology should take priority. Expect TIGER_NAME_VERIFIED_ETYMOLOGY.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='name' v='Priority Test Road'/>
+    <tag k='wikidata' v='Q12345'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- ================================================================ -->
+  <!-- R. POST-TIGER NODE ID DETECTION                                  -->
+  <!-- ================================================================ -->
+
+  <!-- R1: Way with all v1 nodes that have high IDs (post-TIGER era, no user info)
+       These nodes were created well after the TIGER import (IDs > 2 billion).
+       Even though they are v1 with no user info, the high ID proves they were
+       created by a human mapper (e.g., from splitting an old way).
+       Expected: TIGER_UNNAMED_VERIFIED (19939005) — alignment verified via high node IDs -->
+
+  <node id='-2901' lat='40.5000' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/><tag k='__TEST_NODE_ID' v='9000000001'/></node>
+  <node id='-2902' lat='40.5005' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/><tag k='__TEST_NODE_ID' v='9000000002'/></node>
+  <node id='-2903' lat='40.5010' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/><tag k='__TEST_NODE_ID' v='9000000003'/></node>
+
+  <way id='-20801' version='1'>
+    <nd ref='-2901'/><nd ref='-2902'/><nd ref='-2903'/>
+    <tag k='_test_id' v='R1'/>
+    <tag k='_test_note' v='Unnamed way with all v1 high-ID nodes (post-TIGER). Expect alignment verified.'/>
+    <tag k='highway' v='track'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- R2: Way with mixed nodes — some old TIGER-era (low ID, v1) and some new (high ID, v1)
+       The high percentage of post-TIGER nodes should still trigger alignment verification
+       when the edited percentage threshold is met.
+       Expected: depends on ratio — with 2/3 high-ID nodes, should pass 80% threshold
+       if we count the high-ID nodes as edited. Actually 2/3 = 66%, below 80%.
+       So with 4 high-ID and 1 low-ID: 4/5 = 80%, should pass.
+       Expected: TIGER_UNNAMED_VERIFIED (19939005) -->
+
+  <node id='-2911' lat='40.5100' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2912' lat='40.5105' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/><tag k='__TEST_NODE_ID' v='9000000011'/></node>
+  <node id='-2913' lat='40.5110' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/><tag k='__TEST_NODE_ID' v='9000000012'/></node>
+  <node id='-2914' lat='40.5115' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/><tag k='__TEST_NODE_ID' v='9000000013'/></node>
+  <node id='-2915' lat='40.5120' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/><tag k='__TEST_NODE_ID' v='9000000014'/></node>
+
+  <way id='-20802' version='1'>
+    <nd ref='-2911'/><nd ref='-2912'/><nd ref='-2913'/><nd ref='-2914'/><nd ref='-2915'/>
+    <tag k='_test_id' v='R2'/>
+    <tag k='_test_note' v='Unnamed way with 1 old v1 node + 4 high-ID v1 nodes (80% post-TIGER). Expect alignment verified.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
+
+  <!-- R3: Way with all old TIGER-era nodes (low IDs, v1, no user info)
+       Should NOT be alignment-verified — all nodes are v1 from the import era.
+       Expected: no warning (no evidence) -->
+
+  <node id='-2811' lat='40.5200' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2812' lat='40.5205' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+  <node id='-2813' lat='40.5210' lon='-75.1000'><tag k='__TEST_VERSION' v='1'/></node>
+
+  <way id='-20803' version='1'>
+    <nd ref='-2811'/><nd ref='-2812'/><nd ref='-2813'/>
+    <tag k='_test_id' v='R3'/>
+    <tag k='_test_note' v='Unnamed way with all old v1 low-ID nodes (TIGER era). Expect no alignment evidence, no warning.'/>
+    <tag k='highway' v='residential'/>
+    <tag k='tiger:reviewed' v='no'/>
+  </way>
+
 </osm>

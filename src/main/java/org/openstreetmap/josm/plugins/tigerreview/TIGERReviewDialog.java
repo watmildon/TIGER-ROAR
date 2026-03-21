@@ -441,7 +441,8 @@ public class TIGERReviewDialog extends ToggleDialog
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ONE_END
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD
-                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY) {
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT) {
             if (result instanceof ReviewResult rr
                     && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
                 return 2; // Fully verified
