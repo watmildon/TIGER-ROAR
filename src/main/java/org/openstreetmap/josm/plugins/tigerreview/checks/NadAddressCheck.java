@@ -2,8 +2,12 @@
 package org.openstreetmap.josm.plugins.tigerreview.checks;
 
 import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 import org.openstreetmap.josm.data.osm.Way;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.GridCell;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.RoadSegmentEntry;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataCache;
 
 /**
@@ -81,11 +85,13 @@ public class NadAddressCheck {
     /**
      * Pre-assign NAD address points to their matching roads.
      *
-     * @param ways The roads to consider for assignment
-     * @see NadDataCache#assignAddressesToRoads(Collection, double)
+     * @param ways     The roads to consider for assignment
+     * @param roadGrid Pre-built road segment grid, or null for linear scan
+     * @see NadDataCache#assignAddressesToRoads(Collection, double, Map)
      */
-    public void assignAddressesToRoads(Collection<Way> ways) {
-        NadDataCache.getInstance().assignAddressesToRoads(ways, maxDistanceMeters);
+    public void assignAddressesToRoads(Collection<Way> ways,
+            Map<GridCell, List<RoadSegmentEntry>> roadGrid) {
+        NadDataCache.getInstance().assignAddressesToRoads(ways, maxDistanceMeters, roadGrid);
     }
 
     /**

@@ -182,11 +182,12 @@ public class TIGERReviewTest extends Test {
                     .filter(w -> w.get("highway") != null
                             && CLASSIFIED_HIGHWAYS.contains(w.get("highway")))
                     .collect(Collectors.toList());
+            var roadGrid = SpatialUtils.buildRoadSegmentGrid(candidateWays);
             if (addressCheckEnabled) {
-                addressCheck.assignAddressesToRoads(candidateWays);
+                addressCheck.assignAddressesToRoads(candidateWays, roadGrid);
             }
             if (nadCheckEnabled) {
-                nadAddressCheck.assignAddressesToRoads(candidateWays);
+                nadAddressCheck.assignAddressesToRoads(candidateWays, roadGrid);
             }
             addressesAssigned = true;
         }

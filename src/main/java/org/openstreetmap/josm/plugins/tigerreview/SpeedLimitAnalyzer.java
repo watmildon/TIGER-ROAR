@@ -138,12 +138,46 @@ public final class SpeedLimitAnalyzer {
     }
 
     /**
+     * Result of a timed speed limit analysis run.
+     */
+    public static class SpeedLimitAnalysisResult {
+        private final List<SpeedLimitSuggestion> results;
+        private final AnalysisTimer timer;
+
+        SpeedLimitAnalysisResult(List<SpeedLimitSuggestion> results, AnalysisTimer timer) {
+            this.results = results;
+            this.timer = timer;
+        }
+
+        public List<SpeedLimitSuggestion> getResults() {
+            return results;
+        }
+
+        public AnalysisTimer getTimer() {
+            return timer;
+        }
+    }
+
+    /**
      * Analyze all eligible ways in a DataSet for speed limit suggestions.
      *
      * @param dataSet the dataset to analyze
      * @return list of speed limit suggestions
      */
     public static List<SpeedLimitSuggestion> analyzeAll(DataSet dataSet) {
+        return analyzeAllTimed(dataSet).getResults();
+    }
+
+    /**
+     * Analyze all eligible ways with timing instrumentation.
+     *
+     * @param dataSet the dataset to analyze
+     * @return speed limit analysis results with timing breakdown
+     */
+    public static SpeedLimitAnalysisResult analyzeAllTimed(DataSet dataSet) {
+        AnalysisTimer timer = new AnalysisTimer();
+        timer.start("analyzeWays");
+
         SpeedLimitCheck check = new SpeedLimitCheck();
         List<SpeedLimitSuggestion> results = new ArrayList<>();
 
@@ -158,6 +192,7 @@ public final class SpeedLimitAnalyzer {
             }
         }
 
-        return results;
+        timer.stop();
+        return new SpeedLimitAnalysisResult(results, timer);
     }
 }

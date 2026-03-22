@@ -6,6 +6,7 @@ import static org.openstreetmap.josm.tools.I18n.tr;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -135,6 +136,28 @@ public final class TIGERReviewAnalyzer {
     }
 
     /**
+     * Result of a timed analysis run, containing both the review results
+     * and the timing breakdown for each phase.
+     */
+    public static class AnalysisResult {
+        private final List<ReviewResult> results;
+        private final AnalysisTimer timer;
+
+        AnalysisResult(List<ReviewResult> results, AnalysisTimer timer) {
+            this.results = results;
+            this.timer = timer;
+        }
+
+        public List<ReviewResult> getResults() {
+            return results;
+        }
+
+        public AnalysisTimer getTimer() {
+            return timer;
+        }
+    }
+
+    /**
      * Analyze all eligible ways in a DataSet, reading preferences for
      * check configuration.
      *
@@ -142,6 +165,19 @@ public final class TIGERReviewAnalyzer {
      * @return list of actionable results
      */
     public static List<ReviewResult> analyzeAll(DataSet dataSet) {
+        return analyzeAllTimed(dataSet).getResults();
+    }
+
+    /**
+     * Analyze all eligible ways in a DataSet with timing instrumentation.
+     *
+     * @param dataSet the dataset to analyze
+     * @return analysis results with per-phase timing breakdown
+     */
+    public static AnalysisResult analyzeAllTimed(DataSet dataSet) {
+        AnalysisTimer timer = new AnalysisTimer();
+
+        timer.start("readPrefs");
         // Read preferences
         boolean connectedRoadCheckEnabled = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_ENABLE_CONNECTED_ROAD_CHECK, true);
@@ -180,20 +216,30 @@ public final class TIGERReviewAnalyzer {
         NadAddressCheck nadAddressCheck = new NadAddressCheck(maxNadDistance);
 
         // Build address spatial index
+        timer.start("buildIndex");
         addressCheck.buildIndex(dataSet);
 
-        // Pre-assign addresses to matching roads to prevent false name suggestions
+        // Prepare lazy address-to-road assignment (actual work deferred until findSuggestedName)
+        timer.start("collectCandidates");
         List<Way> candidateWays = dataSet.getWays().stream()
                 .filter(Way::isUsable)
                 .filter(w -> w.get("highway") != null && HighwayConstants.TIGER_HIGHWAYS.contains(w.get("highway")))
                 .collect(Collectors.toList());
-        if (addressCheckEnabled) {
-            addressCheck.assignAddressesToRoads(candidateWays);
-        }
-        if (nadCheckEnabled) {
-            nadAddressCheck.assignAddressesToRoads(candidateWays);
+
+        // Build road segment grid once, shared by both address checks
+        Map<SpatialUtils.GridCell, List<SpatialUtils.RoadSegmentEntry>> roadGrid = null;
+        if (addressCheckEnabled || nadCheckEnabled) {
+            roadGrid = SpatialUtils.buildRoadSegmentGrid(candidateWays);
         }
 
+        if (addressCheckEnabled) {
+            addressCheck.assignAddressesToRoads(candidateWays, roadGrid);
+        }
+        if (nadCheckEnabled) {
+            nadAddressCheck.assignAddressesToRoads(candidateWays, roadGrid);
+        }
+
+        timer.start("analyzeWays");
         List<ReviewResult> results = new ArrayList<>();
 
         for (Way way : dataSet.getWays()) {
@@ -229,7 +275,8 @@ public final class TIGERReviewAnalyzer {
             }
         }
 
-        return results;
+        timer.stop();
+        return new AnalysisResult(results, timer);
     }
 
     /**

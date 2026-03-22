@@ -20,6 +20,7 @@ import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.CellRange;
 import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.GridCell;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.RoadSegmentEntry;
 import org.openstreetmap.josm.plugins.tigerreview.StreetNameUtils;
 
 /**
@@ -48,6 +49,13 @@ public class AddressCheck {
      * An unassigned address can only suggest a name for its nearest road.
      */
     private final Map<AddressData, Way> nearestRoad = new IdentityHashMap<>();
+
+    /** Deferred assignment: stored candidate ways for lazy execution. */
+    private Collection<Way> deferredWays;
+    /** Deferred assignment: stored road grid for lazy execution. */
+    private Map<GridCell, List<RoadSegmentEntry>> deferredRoadGrid;
+    /** Whether assignment has been performed (eagerly or lazily). */
+    private boolean assignmentDone;
 
     /**
      * Create a new AddressCheck.
@@ -91,39 +99,59 @@ public class AddressCheck {
 
             GridCell cell = new GridCell(en);
             addressGrid.computeIfAbsent(cell, k -> new ArrayList<>())
-                    .add(new AddressData(addrStreet, en));
+                    .add(new AddressData(addrStreet, StreetNameUtils.expand(addrStreet), en));
         }
 
         indexBuilt = true;
     }
 
     /**
-     * Pre-assign address points to roads based on proximity. For each address
-     * within range of any road, finds the 2 nearest roads. If the address's
-     * addr:street matches either of those roads' names, it is "assigned" and
-     * excluded from name suggestions entirely. Otherwise, it can only suggest
-     * a name for its single nearest road.
+     * Prepare lazy address-to-road assignment. The actual O(A×R) work is
+     * deferred until {@link #findSuggestedName} is first called, since
+     * the much more common {@link #isNameCorroborated} path doesn't need it.
      *
-     * <p>This prevents false cross-suggestions between nearby parallel roads
-     * (e.g., "Country Creek Court" addresses suggesting a rename for adjacent
-     * "Country Creek Terrace"), and handles corner addresses where the address
-     * may be near two roads but clearly belongs to one of them.</p>
+     * <p>Must be called after {@link #buildIndex}.</p>
      *
-     * <p>Must be called after {@link #buildIndex} and before any calls to
-     * {@link #findSuggestedName}.</p>
-     *
-     * @param ways The roads to consider for assignment
+     * @param ways     The roads to consider for assignment
+     * @param roadGrid Pre-built road segment grid from
+     *                 {@link SpatialUtils#buildRoadSegmentGrid}, or null to
+     *                 fall back to linear scan (slower)
      */
-    public void assignAddressesToRoads(Collection<Way> ways) {
+    public void assignAddressesToRoads(Collection<Way> ways,
+            Map<GridCell, List<RoadSegmentEntry>> roadGrid) {
+        this.deferredWays = ways;
+        this.deferredRoadGrid = roadGrid;
+        this.assignmentDone = false;
         assignedAddresses.clear();
         nearestRoad.clear();
+    }
+
+    /**
+     * Execute the deferred address-to-road assignment if not yet done.
+     */
+    private void ensureAssignmentDone() {
+        if (assignmentDone || deferredWays == null) {
+            return;
+        }
+        assignmentDone = true;
+        doAssignAddressesToRoads(deferredWays, deferredRoadGrid);
+        // Release references to allow GC
+        deferredWays = null;
+        deferredRoadGrid = null;
+    }
+
+    /**
+     * Actually perform the address-to-road assignment.
+     */
+    private void doAssignAddressesToRoads(Collection<Way> ways,
+            Map<GridCell, List<RoadSegmentEntry>> roadGrid) {
 
         if (addressGrid.isEmpty()) {
             return;
         }
 
-        // Build a list of named highway ways with their precomputed segments
-        List<RoadSegments> roads = new ArrayList<>();
+        // Build a map from Way → RoadSegments for quick lookup of expanded names
+        Map<Way, RoadSegments> roadsByWay = new IdentityHashMap<>();
         for (Way way : ways) {
             String name = way.get("name");
             if (name == null || name.isEmpty()) {
@@ -133,22 +161,32 @@ public class AddressCheck {
             if (highway == null || !HighwayConstants.TIGER_HIGHWAYS.contains(highway)) {
                 continue;
             }
-            roads.add(new RoadSegments(way, name, computeScaledDistance(way)));
+            roadsByWay.put(way, new RoadSegments(way, name, StreetNameUtils.expand(name), computeScaledDistance(way)));
         }
 
-        if (roads.isEmpty()) {
+        if (roadsByWay.isEmpty()) {
             return;
         }
 
-        // For each address, find the 2 nearest roads
+        // For each address, find the 2 nearest roads using grid lookup
         for (List<AddressData> cell : addressGrid.values()) {
             for (AddressData addr : cell) {
-                Way nearest = null;
-                Way secondNearest = null;
+                RoadSegments nearest = null;
+                RoadSegments secondNearest = null;
                 double nearestDist = Double.MAX_VALUE;
                 double secondNearestDist = Double.MAX_VALUE;
 
-                for (RoadSegments road : roads) {
+                // Use road grid to find candidate roads near this address
+                Set<Way> candidates = (roadGrid != null)
+                        ? SpatialUtils.findNearbyRoads(addr.location, roadGrid, maxDistanceMeters)
+                        : roadsByWay.keySet();
+
+                for (Way candidateWay : candidates) {
+                    RoadSegments road = roadsByWay.get(candidateWay);
+                    if (road == null) {
+                        continue; // not a named highway
+                    }
+
                     double dist = minDistanceToWay(addr.location, road.way, road.scaledMaxDistance);
                     if (dist > road.scaledMaxDistance) {
                         continue; // too far from this road
@@ -157,10 +195,10 @@ public class AddressCheck {
                     if (dist < nearestDist) {
                         secondNearest = nearest;
                         secondNearestDist = nearestDist;
-                        nearest = road.way;
+                        nearest = road;
                         nearestDist = dist;
                     } else if (dist < secondNearestDist) {
-                        secondNearest = road.way;
+                        secondNearest = road;
                         secondNearestDist = dist;
                     }
                 }
@@ -169,17 +207,15 @@ public class AddressCheck {
                     continue; // not near any road
                 }
 
-                nearestRoad.put(addr, nearest);
+                nearestRoad.put(addr, nearest.way);
 
                 // Check if addr:street matches either of the 2 nearest roads
-                String nearestName = nearest.get("name");
-                if (nearestName != null && StreetNameUtils.namesMatch(addr.streetName, nearestName)) {
+                // (using pre-expanded names for fast comparison)
+                if (addr.expandedStreetName.equalsIgnoreCase(nearest.expandedName)) {
                     assignedAddresses.add(addr);
-                } else if (secondNearest != null) {
-                    String secondName = secondNearest.get("name");
-                    if (secondName != null && StreetNameUtils.namesMatch(addr.streetName, secondName)) {
-                        assignedAddresses.add(addr);
-                    }
+                } else if (secondNearest != null
+                        && addr.expandedStreetName.equalsIgnoreCase(secondNearest.expandedName)) {
+                    assignedAddresses.add(addr);
                 }
             }
         }
@@ -211,6 +247,9 @@ public class AddressCheck {
         // scale our threshold by the same factor to keep the ground-distance meaning.
         double scaledMaxDistance = computeScaledDistance(way);
 
+        // Expand road name once for all segment comparisons
+        String expandedName = StreetNameUtils.expand(name);
+
         // Check each segment of the way
         List<Node> nodes = way.getNodes();
         for (int i = 0; i < nodes.size() - 1; i++) {
@@ -228,8 +267,8 @@ public class AddressCheck {
                 continue;
             }
 
-            // Check addresses near this segment
-            if (hasMatchingAddressNearSegment(en1, en2, name, scaledMaxDistance)) {
+            // Check addresses near this segment (using pre-expanded names)
+            if (hasMatchingAddressNearSegment(en1, en2, expandedName, scaledMaxDistance)) {
                 return true;
             }
         }
@@ -262,11 +301,15 @@ public class AddressCheck {
             buildIndex(way.getDataSet());
         }
 
+        // Trigger lazy assignment on first call
+        ensureAssignmentDone();
+
         if (addressGrid.isEmpty()) {
             return null;
         }
 
         double scaledMaxDistance = computeScaledDistance(way);
+        String expandedName = StreetNameUtils.expand(name);
 
         Map<String, Integer> nameCounts = new HashMap<>();
         List<Node> nodes = way.getNodes();
@@ -285,7 +328,7 @@ public class AddressCheck {
                 continue;
             }
 
-            collectNonMatchingNamesNearSegment(en1, en2, name, scaledMaxDistance, way, nameCounts);
+            collectNonMatchingNamesNearSegment(en1, en2, expandedName, scaledMaxDistance, way, nameCounts);
         }
 
         if (nameCounts.isEmpty()) {
@@ -298,13 +341,15 @@ public class AddressCheck {
     /**
      * Collect addr:street names near a segment that do NOT match the given name,
      * are NOT assigned to a matching road, and whose nearest road is the given way.
+     *
+     * @param expandedName Pre-expanded road name (via {@link StreetNameUtils#expand})
      */
-    private void collectNonMatchingNamesNearSegment(EastNorth en1, EastNorth en2, String name,
+    private void collectNonMatchingNamesNearSegment(EastNorth en1, EastNorth en2, String expandedName,
             double scaledMaxDistance, Way way, Map<String, Integer> nameCounts) {
         CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
         for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (StreetNameUtils.namesMatch(name, addr.streetName)) {
+            if (expandedName.equalsIgnoreCase(addr.expandedStreetName)) {
                 continue; // skip matches (exact or abbreviation-expanded)
             }
 
@@ -372,13 +417,15 @@ public class AddressCheck {
 
     /**
      * Check if there's a matching address near a line segment.
+     *
+     * @param expandedName Pre-expanded road name (via {@link StreetNameUtils#expand})
      */
-    private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String name,
+    private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String expandedName,
             double scaledMaxDistance) {
         CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
         for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (StreetNameUtils.namesMatch(name, addr.streetName)) {
+            if (expandedName.equalsIgnoreCase(addr.expandedStreetName)) {
                 double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
                 if (dist <= scaledMaxDistance) {
                     return true;
@@ -408,14 +455,14 @@ public class AddressCheck {
     }
 
     /**
-     * Address data stored in the grid.
+     * Address data stored in the grid, with pre-expanded street name for fast matching.
      */
-    private record AddressData(String streetName, EastNorth location) {
+    private record AddressData(String streetName, String expandedStreetName, EastNorth location) {
     }
 
     /**
-     * Precomputed road data for assignment.
+     * Precomputed road data for assignment, with pre-expanded name for fast matching.
      */
-    private record RoadSegments(Way way, String name, double scaledMaxDistance) {
+    private record RoadSegments(Way way, String name, String expandedName, double scaledMaxDistance) {
     }
 }

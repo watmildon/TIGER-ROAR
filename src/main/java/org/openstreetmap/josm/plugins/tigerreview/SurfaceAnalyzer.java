@@ -181,12 +181,46 @@ public final class SurfaceAnalyzer {
     }
 
     /**
+     * Result of a timed surface analysis run.
+     */
+    public static class SurfaceAnalysisResult {
+        private final List<SurfaceSuggestion> results;
+        private final AnalysisTimer timer;
+
+        SurfaceAnalysisResult(List<SurfaceSuggestion> results, AnalysisTimer timer) {
+            this.results = results;
+            this.timer = timer;
+        }
+
+        public List<SurfaceSuggestion> getResults() {
+            return results;
+        }
+
+        public AnalysisTimer getTimer() {
+            return timer;
+        }
+    }
+
+    /**
      * Analyze all eligible ways in a DataSet for surface suggestions.
      *
      * @param dataSet the dataset to analyze
      * @return list of surface suggestions
      */
     public static List<SurfaceSuggestion> analyzeAll(DataSet dataSet) {
+        return analyzeAllTimed(dataSet).getResults();
+    }
+
+    /**
+     * Analyze all eligible ways with timing instrumentation.
+     *
+     * @param dataSet the dataset to analyze
+     * @return surface analysis results with timing breakdown
+     */
+    public static SurfaceAnalysisResult analyzeAllTimed(DataSet dataSet) {
+        AnalysisTimer timer = new AnalysisTimer();
+        timer.start("analyzeWays");
+
         SurfaceCheck surfaceCheck = new SurfaceCheck();
         List<SurfaceSuggestion> results = new ArrayList<>();
 
@@ -201,6 +235,7 @@ public final class SurfaceAnalyzer {
             }
         }
 
-        return results;
+        timer.stop();
+        return new SurfaceAnalysisResult(results, timer);
     }
 }

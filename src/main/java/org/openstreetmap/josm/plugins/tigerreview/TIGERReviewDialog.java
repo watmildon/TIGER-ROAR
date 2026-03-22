@@ -269,6 +269,7 @@ public class TIGERReviewDialog extends ToggleDialog
             private List<ReviewResult> tigerRes;
             private List<SurfaceSuggestion> surfaceRes;
             private List<SpeedLimitSuggestion> speedLimitRes;
+            private long analysisMs;
 
             @Override
             protected Void doInBackground() {
@@ -282,9 +283,17 @@ public class TIGERReviewDialog extends ToggleDialog
                         && !MapillaryDataCache.getInstance().isReady()) {
                     MapillaryDataLoader.getInstance().loadForDataSetSync(ds);
                 }
-                tigerRes = TIGERReviewAnalyzer.analyzeAll(ds);
-                surfaceRes = SurfaceAnalyzer.analyzeAll(ds);
-                speedLimitRes = SpeedLimitAnalyzer.analyzeAll(ds);
+                long startTime = System.nanoTime();
+                TIGERReviewAnalyzer.AnalysisResult tigerAnalysis =
+                        TIGERReviewAnalyzer.analyzeAllTimed(ds);
+                tigerRes = tigerAnalysis.getResults();
+                SurfaceAnalyzer.SurfaceAnalysisResult surfaceAnalysis =
+                        SurfaceAnalyzer.analyzeAllTimed(ds);
+                surfaceRes = surfaceAnalysis.getResults();
+                SpeedLimitAnalyzer.SpeedLimitAnalysisResult speedLimitAnalysis =
+                        SpeedLimitAnalyzer.analyzeAllTimed(ds);
+                speedLimitRes = speedLimitAnalysis.getResults();
+                analysisMs = (System.nanoTime() - startTime) / 1_000_000;
                 return null;
             }
 
@@ -297,7 +306,8 @@ public class TIGERReviewDialog extends ToggleDialog
                         speedLimitResults = speedLimitRes;
                         rebuildTrees();
                         setTitle(buildTitle(
-                                tigerResults.size() + surfaceResults.size() + speedLimitResults.size()));
+                                tigerResults.size() + surfaceResults.size() + speedLimitResults.size(),
+                                analysisMs));
                     }
                 } catch (Exception ex) {
                     clearResults();
@@ -546,10 +556,10 @@ public class TIGERReviewDialog extends ToggleDialog
     }
 
     /**
-     * Build the title bar text, including NAD cache status if NAD check is enabled.
+     * Build the title bar text, including timing and NAD cache status.
      */
-    private String buildTitle(int resultCount) {
-        String title = tr("TIGER ROAR: {0} results", resultCount);
+    private String buildTitle(int resultCount, long analysisMs) {
+        String title = tr("TIGER ROAR: {0} results ({1}ms)", resultCount, analysisMs);
         if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false)) {
             NadDataCache cache = NadDataCache.getInstance();
             if (cache.isReady()) {
