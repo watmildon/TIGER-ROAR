@@ -55,12 +55,17 @@ public class NadDataCache {
     private int addressCount;
 
     /**
-     * Addresses that have been assigned to a matching road.
+     * Addresses whose street name matches one of the 2 nearest roads.
+     * These are excluded from {@link #findMostCommonStreetName} entirely.
      * Uses identity-based set since NadAddressData is a record (value equality).
-     * These addresses are excluded from {@link #findMostCommonStreetName} to avoid
-     * false suggestions when an address legitimately belongs to a nearby road.
      */
     private final Set<NadAddressData> assignedAddresses = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /**
+     * Maps each address to its nearest road (by identity).
+     * An unassigned address can only suggest a name for its nearest road.
+     */
+    private final Map<NadAddressData, Way> nearestRoad = new IdentityHashMap<>();
 
     private NadDataCache() {
         // Singleton
@@ -87,6 +92,7 @@ public class NadDataCache {
         try {
             addressGrid.clear();
             assignedAddresses.clear();
+            nearestRoad.clear();
             cachedBounds = bounds;
             addressCount = 0;
             errorMessage = null;
@@ -146,6 +152,7 @@ public class NadDataCache {
             errorMessage = null;
             addressGrid.clear();
             assignedAddresses.clear();
+            nearestRoad.clear();
             cachedBounds = null;
             addressCount = 0;
         } finally {
@@ -154,10 +161,11 @@ public class NadDataCache {
     }
 
     /**
-     * Pre-assign NAD address points to their matching roads. An address is "assigned"
-     * if a nearby road has a name matching the address's street name (exact or fuzzy).
-     * Assigned addresses are excluded from {@link #findMostCommonStreetName} to prevent
-     * false name suggestions.
+     * Pre-assign NAD address points to roads based on proximity. For each address
+     * within range of any road, finds the 2 nearest roads. If the address's
+     * street name matches either of those roads' names, it is "assigned" and
+     * excluded from name suggestions entirely. Otherwise, it can only suggest
+     * a name for its single nearest road.
      *
      * @param ways              The roads to consider for assignment
      * @param maxDistanceMeters Maximum distance for matching
@@ -166,11 +174,14 @@ public class NadDataCache {
         lock.writeLock().lock();
         try {
             assignedAddresses.clear();
+            nearestRoad.clear();
 
             if (!ready || addressGrid.isEmpty()) {
                 return;
             }
 
+            // Build a list of named highway ways
+            List<RoadInfo> roads = new ArrayList<>();
             for (Way way : ways) {
                 String name = way.get("name");
                 if (name == null || name.isEmpty()) {
@@ -180,46 +191,58 @@ public class NadDataCache {
                 if (highway == null || !HighwayConstants.TIGER_HIGHWAYS.contains(highway)) {
                     continue;
                 }
+                roads.add(new RoadInfo(way, name));
+            }
 
-                List<Node> nodes = way.getNodes();
-                for (int i = 0; i < nodes.size() - 1; i++) {
-                    Node n1 = nodes.get(i);
-                    Node n2 = nodes.get(i + 1);
+            if (roads.isEmpty()) {
+                return;
+            }
 
-                    if (!n1.isLatLonKnown() || !n2.isLatLonKnown()) {
+            // For each address, find the 2 nearest roads
+            for (List<NadAddressData> cell : addressGrid.values()) {
+                for (NadAddressData addr : cell) {
+                    Way nearest = null;
+                    Way secondNearest = null;
+                    double nearestDist = Double.MAX_VALUE;
+                    double secondNearestDist = Double.MAX_VALUE;
+
+                    for (RoadInfo road : roads) {
+                        double dist = minDistanceToWay(addr.location(), road.way);
+                        if (dist > maxDistanceMeters) {
+                            continue;
+                        }
+
+                        if (dist < nearestDist) {
+                            secondNearest = nearest;
+                            secondNearestDist = nearestDist;
+                            nearest = road.way;
+                            nearestDist = dist;
+                        } else if (dist < secondNearestDist) {
+                            secondNearest = road.way;
+                            secondNearestDist = dist;
+                        }
+                    }
+
+                    if (nearest == null) {
                         continue;
                     }
 
-                    EastNorth en1 = n1.getEastNorth();
-                    EastNorth en2 = n2.getEastNorth();
+                    nearestRoad.put(addr, nearest);
 
-                    if (en1 == null || en2 == null) {
-                        continue;
+                    // Check if street name matches either of the 2 nearest roads
+                    String nearestName = nearest.get("name");
+                    if (nearestName != null && StreetNameUtils.namesMatch(addr.streetName(), nearestName)) {
+                        assignedAddresses.add(addr);
+                    } else if (secondNearest != null) {
+                        String secondName = secondNearest.get("name");
+                        if (secondName != null && StreetNameUtils.namesMatch(addr.streetName(), secondName)) {
+                            assignedAddresses.add(addr);
+                        }
                     }
-
-                    markMatchingAddressesNearSegment(en1, en2, name, maxDistanceMeters);
                 }
             }
         } finally {
             lock.writeLock().unlock();
-        }
-    }
-
-    /**
-     * Mark NAD addresses near a segment whose street name matches the given name
-     * (exact or fuzzy) as assigned.
-     */
-    private void markMatchingAddressesNearSegment(EastNorth en1, EastNorth en2, String name,
-            double maxDistance) {
-        CellRange range = CellRange.of(en1, en2, maxDistance);
-
-        for (NadAddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (StreetNameUtils.namesMatch(name, addr.streetName())) {
-                double dist = SpatialUtils.distanceToSegment(addr.location(), en1, en2);
-                if (dist <= maxDistance) {
-                    assignedAddresses.add(addr);
-                }
-            }
         }
     }
 
@@ -347,6 +370,12 @@ public class NadDataCache {
      * the given OSM name (exact or fuzzy). Used to suggest that a road might have
      * a different name than what OSM currently records.
      *
+     * <p>Only considers addresses that are:
+     * <ul>
+     *   <li>Not assigned (street name didn't match either of the 2 nearest roads)</li>
+     *   <li>Nearest to this specific way (won't suggest for a farther road)</li>
+     * </ul>
+     *
      * @param way              The way to check
      * @param osmName          The current OSM name to exclude from results
      * @param maxDistanceMeters Maximum distance to search
@@ -382,7 +411,7 @@ public class NadDataCache {
                     continue;
                 }
 
-                collectStreetNamesNearSegment(en1, en2, osmName, maxDistanceMeters, nameCounts);
+                collectStreetNamesNearSegment(en1, en2, osmName, maxDistanceMeters, way, nameCounts);
             }
 
             if (nameCounts.isEmpty()) {
@@ -398,11 +427,12 @@ public class NadDataCache {
     }
 
     /**
-     * Collect NAD street names near a segment, excluding names that match osmName
-     * (exact or fuzzy). Counts are accumulated into the provided map.
+     * Collect NAD street names near a segment, excluding names that match osmName,
+     * addresses assigned to a matching road, and addresses whose nearest road
+     * is not the given way.
      */
     private void collectStreetNamesNearSegment(EastNorth en1, EastNorth en2, String osmName,
-            double maxDistance, Map<String, Integer> nameCounts) {
+            double maxDistance, Way way, Map<String, Integer> nameCounts) {
         CellRange range = CellRange.of(en1, en2, maxDistance);
 
         for (NadAddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
@@ -416,8 +446,14 @@ public class NadDataCache {
                 continue;
             }
 
-            // Skip addresses already assigned to a matching road
+            // Skip addresses whose street name matched one of the 2 nearest roads
             if (assignedAddresses.contains(addr)) {
+                continue;
+            }
+
+            // Only suggest for the address's nearest road
+            Way addrNearest = nearestRoad.get(addr);
+            if (addrNearest != null && addrNearest != way) {
                 continue;
             }
 
@@ -426,8 +462,50 @@ public class NadDataCache {
     }
 
     /**
+     * Compute the minimum distance from a point to any segment of a way.
+     *
+     * @return The minimum distance, or Double.MAX_VALUE if no valid segments
+     */
+    private static double minDistanceToWay(EastNorth point, Way way) {
+        double minDist = Double.MAX_VALUE;
+        List<Node> nodes = way.getNodes();
+
+        for (int i = 0; i < nodes.size() - 1; i++) {
+            Node n1 = nodes.get(i);
+            Node n2 = nodes.get(i + 1);
+
+            if (!n1.isLatLonKnown() || !n2.isLatLonKnown()) {
+                continue;
+            }
+
+            EastNorth en1 = n1.getEastNorth();
+            EastNorth en2 = n2.getEastNorth();
+
+            if (en1 == null || en2 == null) {
+                continue;
+            }
+
+            double dist = SpatialUtils.distanceToSegment(point, en1, en2);
+            if (dist < minDist) {
+                minDist = dist;
+                if (minDist == 0) {
+                    return 0;
+                }
+            }
+        }
+
+        return minDist;
+    }
+
+    /**
      * NAD address data stored in the grid.
      */
     private record NadAddressData(String streetName, EastNorth location) {
+    }
+
+    /**
+     * Precomputed road info for assignment.
+     */
+    private record RoadInfo(Way way, String name) {
     }
 }

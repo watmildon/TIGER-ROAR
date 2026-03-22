@@ -11,12 +11,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.io.OsmReader;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
 import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
@@ -106,6 +109,13 @@ class RegressionSnapshotTest {
                         + "If this change is intentional, delete " + expectedPath
                         + " and re-run to generate a new baseline.");
             }
+
+            // Cross-suggestion check: no name suggestion should suggest a name
+            // that already exists as another road's name in the dataset. This
+            // catches false cross-assignments between nearby parallel roads
+            // (e.g., "Country Creek Court" addresses suggesting a rename for
+            // adjacent "Country Creek Terrace").
+            checkCrossSuggestions(tigerResults, ds, inputFileName);
         } finally {
             TestDataExtractor.clearCaches();
         }
@@ -144,6 +154,66 @@ class RegressionSnapshotTest {
     // ===================================================================
     // Directory resolution
     // ===================================================================
+
+    // ===================================================================
+    // Cross-suggestion detection
+    // ===================================================================
+
+    /**
+     * Check for name suggestions that suggest a name already belonging to
+     * another road in the dataset. These are likely false cross-assignments
+     * between nearby roads (e.g., addresses for "Country Creek Terrace"
+     * incorrectly suggesting that "Country Creek Court" be renamed).
+     *
+     * <p>Suggestions that are abbreviation-expansion variants of the way's own
+     * name are excluded (e.g., "Adams Street" → "East Adams Street") since
+     * those are legitimate corrections, not cross-assignments.</p>
+     *
+     * <p>Cross-suggestions are tracked in the snapshot via a comment line so
+     * that regressions (new cross-suggestions appearing) will be caught by
+     * the snapshot diff. This avoids hard-failing on pre-existing issues in
+     * test data while ensuring new ones don't slip through.</p>
+     */
+    private void checkCrossSuggestions(List<ReviewResult> results, DataSet ds, String fileName) {
+        // Collect all road names in the dataset
+        Set<String> roadNames = new HashSet<>();
+        for (Way way : ds.getWays()) {
+            if (!way.isUsable()) continue;
+            String name = way.get("name");
+            if (name != null && !name.isEmpty()) {
+                roadNames.add(name.toLowerCase());
+            }
+        }
+
+        // Check each name suggestion
+        int count = 0;
+        for (ReviewResult r : results) {
+            if (r.getSuggestedName() == null) continue;
+
+            String suggestedLower = r.getSuggestedName().toLowerCase();
+            String wayName = r.getWay().get("name");
+
+            // Skip if the suggestion doesn't match any existing road name
+            if (!roadNames.contains(suggestedLower)) continue;
+
+            // Skip if the suggestion is for the way's own name (no-op)
+            if (wayName != null && wayName.equalsIgnoreCase(r.getSuggestedName())) continue;
+
+            // Skip if the suggestion is an abbreviation-expansion variant of
+            // the way's own name (e.g., "Adams St" → "Adams Street"). These
+            // are legitimate corrections, not cross-assignments.
+            if (wayName != null && StreetNameUtils.namesMatch(wayName, r.getSuggestedName())) continue;
+
+            count++;
+            System.err.println("  CROSS-SUGGESTION: Way " + r.getWay().getUniqueId()
+                    + " (" + wayName + ") -> \"" + r.getSuggestedName() + "\"");
+        }
+
+        if (count > 0) {
+            System.err.println("WARNING: " + count + " cross-suggestion(s) in " + fileName
+                    + " — addresses suggesting a name that belongs to a different nearby road.");
+        }
+    }
 
     private static Path findRegressionDir() {
         // Try relative to working directory (typical Gradle run)

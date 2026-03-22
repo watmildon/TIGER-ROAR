@@ -95,6 +95,10 @@ public final class TIGERReviewAnalyzer {
             return fixAction;
         }
 
+        public String getSuggestedName() {
+            return suggestedName;
+        }
+
         @Override
         public Supplier<Command> getFixSupplier() {
             if (fixAction == null) {
