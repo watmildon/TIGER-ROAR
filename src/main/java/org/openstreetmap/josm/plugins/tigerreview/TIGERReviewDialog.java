@@ -90,7 +90,6 @@ public class TIGERReviewDialog extends ToggleDialog
 
     private final AbstractAction analyzeAction;
     private final AbstractAction fixAction;
-    private final AbstractAction fixAllAction;
 
     /** Guard to prevent selection feedback loop */
     private boolean updatingSelection;
@@ -147,18 +146,9 @@ public class TIGERReviewDialog extends ToggleDialog
         };
         new ImageProvider("dialogs", "fix").getResource().attachImageIcon(fixAction, true);
 
-        fixAllAction = new AbstractAction(tr("Fix All")) {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                fixAll();
-            }
-        };
-        new ImageProvider("dialogs", "fix").getResource().attachImageIcon(fixAllAction, true);
-
         createLayout(tabbedPane, false, Arrays.asList(
             new SideButton(analyzeAction),
-            new SideButton(fixAction),
-            new SideButton(fixAllAction)
+            new SideButton(fixAction)
         ));
 
         updateButtonState();
@@ -497,12 +487,6 @@ public class TIGERReviewDialog extends ToggleDialog
         applyFixes(toFix);
     }
 
-    private void fixAll() {
-        List<? extends TreeDisplayable> results = getActiveResults();
-        if (results.isEmpty()) return;
-        applyFixes(new ArrayList<>(results));
-    }
-
     /**
      * Gather results from a tree's current selection.
      */
@@ -552,7 +536,6 @@ public class TIGERReviewDialog extends ToggleDialog
     private void updateButtonState() {
         boolean hasResults = !getActiveResults().isEmpty();
         fixAction.setEnabled(hasResults);
-        fixAllAction.setEnabled(hasResults);
     }
 
     /**
