@@ -98,7 +98,7 @@ way=1080819993 code=19939013 fix=REMOVE_TAG msg="name: NAD address data, alignme
 way=1080819995 code=19939013 fix=SET_NAME_REVIEWED msg="NAD address data"
 way=1080819997 code=10496672 fix=FIX msg="Suggest surface=asphalt [low confidence]"
 way=1080819997 code=19939013 fix=REMOVE_TAG msg="name: NAD address data, alignment: 90+% of nodes edited"
-way=1080859295 code=19939013 fix=SET_NAME_REVIEWED msg="NAD address data"
+way=1080859295 code=19939013 fix=REMOVE_TAG msg="name: NAD address data, alignment: both nodes shared with verified roads"
 way=1272094180 code=10496673 fix=none msg="Conflicting surfaces at endpoints"
 way=1272094187 code=10496672 fix=FIX msg="Suggest surface=asphalt [low confidence]"
 way=1272094190 code=10496672 fix=FIX msg="Suggest surface=asphalt [low confidence]"

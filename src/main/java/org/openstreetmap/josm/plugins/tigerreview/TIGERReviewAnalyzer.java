@@ -561,6 +561,8 @@ public final class TIGERReviewAnalyzer {
             return tr("all nodes edited");
         } else if (result.getEvidence() == AlignmentEvidence.HIGH_PERCENTAGE_EDITED) {
             return tr("{0}% of nodes edited", bucketPercentage(result.getPercentageEdited()));
+        } else if (result.getEvidence() == AlignmentEvidence.SHARED_NODES_VERIFIED) {
+            return tr("both nodes shared with verified roads");
         } else {
             return tr("avg node version {0}", bucketVersion(result.getAvgVersion()));
         }

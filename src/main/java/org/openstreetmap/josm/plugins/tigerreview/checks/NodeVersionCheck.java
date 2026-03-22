@@ -95,7 +95,9 @@ public class NodeVersionCheck {
         /** Every node in the way has been edited by a human (not a bot) */
         ALL_NODES_EDITED,
         /** High percentage of nodes have been edited by a human (not a bot) */
-        HIGH_PERCENTAGE_EDITED
+        HIGH_PERCENTAGE_EDITED,
+        /** 2-node way where both nodes are shared with alignment-verified roads */
+        SHARED_NODES_VERIFIED
     }
 
     /**
@@ -238,6 +240,15 @@ public class NodeVersionCheck {
         // bumping nodes to v2) should not count as alignment verification.
         if (!stats.hasUserInfo && stats.avgVersion > minAvgVersion) {
             return new AlignmentResult(AlignmentEvidence.AVG_VERSION_HIGH, stats.avgVersion, stats.percentageEdited);
+        }
+
+        // 2-node way fallback: if the way has exactly 2 nodes and both nodes
+        // are shared with other highway ways whose alignment is independently
+        // verified, the 2-node way's alignment is also verified (its position
+        // is fully determined by those two endpoint nodes).
+        if (way.getNodesCount() == 2 && areBothNodesOnVerifiedRoads(way)) {
+            return new AlignmentResult(AlignmentEvidence.SHARED_NODES_VERIFIED,
+                    stats.avgVersion, stats.percentageEdited);
         }
 
         return new AlignmentResult(AlignmentEvidence.NONE, stats.avgVersion, stats.percentageEdited);
@@ -444,6 +455,64 @@ public class NodeVersionCheck {
         // For older nodes without user info, use version > 2 heuristic
         // (accounts for import + bot cleanup)
         return version > 2;
+    }
+
+    /**
+     * Check if both nodes of a 2-node way are shared with other highway ways
+     * whose alignment is independently verified (without using this 2-node
+     * fallback, to avoid circular reasoning).
+     */
+    private boolean areBothNodesOnVerifiedRoads(Way way) {
+        Node node1 = way.getNode(0);
+        Node node2 = way.getNode(1);
+        return isNodeOnVerifiedRoad(node1, way) && isNodeOnVerifiedRoad(node2, way);
+    }
+
+    /**
+     * Check if a node is shared with at least one other highway way whose
+     * alignment is verified by its own node stats (not via the 2-node fallback).
+     */
+    private boolean isNodeOnVerifiedRoad(Node node, Way excludeWay) {
+        for (Way parentWay : node.getParentWays()) {
+            if (parentWay == excludeWay || !parentWay.isUsable()) {
+                continue;
+            }
+            String highway = parentWay.get("highway");
+            if (highway == null) {
+                continue;
+            }
+            // Check alignment of the connected way using only direct evidence
+            // (not the 2-node fallback) to avoid circular reasoning.
+            if (isDirectlyAlignmentVerified(parentWay)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if a way's alignment is verified by direct evidence only:
+     * explicit tags, all-nodes-edited, high-percentage-edited, or avg-version.
+     * Does NOT use the 2-node shared-node fallback.
+     */
+    private boolean isDirectlyAlignmentVerified(Way way) {
+        String tigerReviewed = way.get(TIGER_REVIEWED);
+        if (tigerReviewed != null && ALIGNMENT_REVIEWED_VALUES.contains(tigerReviewed)) {
+            return true;
+        }
+
+        NodeStats stats = calculateNodeStats(way);
+
+        if (stats.allNodesEdited && stats.nodeCount > 0) {
+            return true;
+        }
+        if (stats.percentageEdited >= minPercentageEdited && stats.nodeCount > 0) {
+            return true;
+        }
+        if (!stats.hasUserInfo && stats.avgVersion > minAvgVersion) {
+            return true;
+        }
+        return false;
     }
 
     private static class NodeStats {

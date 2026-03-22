@@ -1,5 +1,5 @@
 # TIGER-ROAR Result Snapshot
-# Total warnings: 285
+# Total warnings: 286
 
 way=17444741 code=10496676 fix=FIX msg="Suggest surface=asphalt [medium confidence]"
 way=17444741 code=19939005 fix=REMOVE_TAG msg="90+% of nodes edited"
@@ -72,6 +72,7 @@ way=163510077 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="all nodes edited"
 way=163510077 code=19939017 fix=SUGGEST_NAME msg="North Meridian Road"
 way=163510081 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="all nodes edited"
 way=300953781 code=10496672 fix=FIX msg="Suggest surface=asphalt [low confidence]"
+way=300953781 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="both nodes shared with verified roads"
 way=677646752 code=10496671 fix=FIX msg="Suggest surface=asphalt [high confidence]"
 way=677646752 code=19939005 fix=REMOVE_TAG msg="80+% of nodes edited"
 way=677646753 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
@@ -158,7 +159,7 @@ way=909792498 code=10496672 fix=FIX msg="Suggest surface=asphalt [low confidence
 way=909792498 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
 way=909792500 code=10496673 fix=none msg="Conflicting surfaces at endpoints"
 way=909792500 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
-way=909792584 code=19939010 fix=SET_NAME_REVIEWED msg="nearby addr:street"
+way=909792584 code=19939010 fix=REMOVE_TAG msg="name: nearby addr:street, alignment: both nodes shared with verified roads"
 way=909793220 code=19939010 fix=SET_NAME_REVIEWED msg="nearby addr:street"
 way=909793446 code=10496672 fix=FIX msg="Suggest surface=asphalt [low confidence]"
 way=909793446 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
