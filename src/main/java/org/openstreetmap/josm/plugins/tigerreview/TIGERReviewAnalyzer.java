@@ -112,7 +112,18 @@ public final class TIGERReviewAnalyzer {
             case SET_ALIGNMENT_REVIEWED:
                 return () -> new ChangePropertyCommand(way, TIGER_REVIEWED, "aerial");
             case SUGGEST_NAME:
-                return () -> new ChangePropertyCommand(way, "name", suggestedName);
+                return () -> {
+                    List<Command> cmds = new ArrayList<>();
+                    cmds.add(new ChangePropertyCommand(way, "name", suggestedName));
+                    String currentReviewed = way.get(TIGER_REVIEWED);
+                    if (isAlignmentReviewedValue(currentReviewed)) {
+                        // Name accepted + alignment already verified = fully verified
+                        cmds.add(createRemoveTagCommand(way, stripTigerTags));
+                    } else if ("no".equals(currentReviewed)) {
+                        cmds.add(new ChangePropertyCommand(way, TIGER_REVIEWED, "name"));
+                    }
+                    return SequenceCommand.wrapIfNeeded(tr("Accept name suggestion"), cmds);
+                };
             default:
                 return () -> new ChangePropertyCommand(way, TIGER_REVIEWED, null);
             }
