@@ -20,7 +20,6 @@ public class TIGERReviewPlugin extends Plugin {
     public TIGERReviewPlugin(PluginInformation info) {
         super(info);
         OsmValidator.addTest(TIGERReviewTest.class);
-        OsmValidator.addTest(SurfaceTest.class);
         OsmValidator.addTest(SpeedLimitTest.class);
 
         // Register name snapshot tracker and external data loaders
