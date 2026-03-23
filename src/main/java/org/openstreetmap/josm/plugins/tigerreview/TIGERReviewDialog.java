@@ -485,6 +485,24 @@ public class TIGERReviewDialog extends ToggleDialog
     private void fixSelected() {
         List<TreeDisplayable> toFix = getSelectedResultsFromTree(getActiveTree());
         if (toFix.isEmpty()) return;
+
+        // If selection spans multiple categories, confirm with the user
+        Set<String> groups = new HashSet<>();
+        for (TreeDisplayable result : toFix) {
+            groups.add(result.getGroupMessage());
+        }
+        if (groups.size() > 1) {
+            int choice = javax.swing.JOptionPane.showConfirmDialog(
+                    MainApplication.getMainFrame(),
+                    tr("Your selection includes {0} different fix categories. Apply all?", groups.size()),
+                    tr("Confirm Fix"),
+                    javax.swing.JOptionPane.OK_CANCEL_OPTION,
+                    javax.swing.JOptionPane.QUESTION_MESSAGE);
+            if (choice != javax.swing.JOptionPane.OK_OPTION) {
+                return;
+            }
+        }
+
         applyFixes(toFix);
     }
 
@@ -514,6 +532,71 @@ public class TIGERReviewDialog extends ToggleDialog
     }
 
     /**
+     * Detect when the same way has complementary fixes from different categories and
+     * upgrade them. For example, SET_NAME_REVIEWED + SET_ALIGNMENT_REVIEWED on the same
+     * way means the road is fully verified, so replace both with a single REMOVE_TAG.
+     */
+    private List<TreeDisplayable> mergeComplementaryFixes(List<? extends TreeDisplayable> toFix) {
+        // Group ReviewResults by way, tracking which fix actions are present
+        Map<Way, List<ReviewResult>> byWay = new LinkedHashMap<>();
+        List<TreeDisplayable> nonReviewResults = new ArrayList<>();
+        for (TreeDisplayable result : toFix) {
+            if (result instanceof ReviewResult rr) {
+                byWay.computeIfAbsent(rr.getWay(), k -> new ArrayList<>()).add(rr);
+            } else {
+                nonReviewResults.add(result);
+            }
+        }
+
+        List<TreeDisplayable> merged = new ArrayList<>(nonReviewResults);
+        boolean stripTigerTags = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
+
+        for (Map.Entry<Way, List<ReviewResult>> entry : byWay.entrySet()) {
+            List<ReviewResult> results = entry.getValue();
+            if (results.size() <= 1) {
+                merged.addAll(results);
+                continue;
+            }
+
+            // Check if complementary fixes combine to fully verify the way
+            Set<TIGERReviewAnalyzer.FixAction> actions = new HashSet<>();
+            for (ReviewResult rr : results) {
+                if (rr.getFixAction() != null) {
+                    actions.add(rr.getFixAction());
+                }
+            }
+
+            boolean hasName = actions.contains(TIGERReviewAnalyzer.FixAction.SET_NAME_REVIEWED)
+                    || actions.contains(TIGERReviewAnalyzer.FixAction.SUGGEST_NAME);
+            boolean hasAlignment = actions.contains(TIGERReviewAnalyzer.FixAction.SET_ALIGNMENT_REVIEWED);
+
+            if (hasName && hasAlignment) {
+                // Name + alignment = fully verified. Replace with a single REMOVE_TAG,
+                // keeping any SUGGEST_NAME so the name change is also applied.
+                Way way = entry.getKey();
+                for (ReviewResult rr : results) {
+                    if (rr.getFixAction() == TIGERReviewAnalyzer.FixAction.SUGGEST_NAME) {
+                        // Keep the name suggestion — its supplier already checks alignment
+                        // state at execution time and will do REMOVE_TAG
+                        merged.add(rr);
+                    }
+                }
+                // Add a single REMOVE_TAG for the fully verified way
+                merged.add(new ReviewResult(way, TIGERReviewTest.TIGER_FULLY_VERIFIED,
+                        tr("name + alignment verified (combined from multiple fixes)"),
+                        tr("Fully verified"),
+                        TIGERReviewAnalyzer.FixAction.REMOVE_TAG, stripTigerTags));
+            } else {
+                // No complementary merge possible — keep all results as-is
+                merged.addAll(results);
+            }
+        }
+
+        return merged;
+    }
+
+    /**
      * Apply fix commands, cascade fully-verified fixes to neighbors, and re-analyze.
      *
      * When a road is fully verified (REMOVE_TAG), adjacent unreviewed roads sharing the
@@ -522,6 +605,10 @@ public class TIGERReviewDialog extends ToggleDialog
      * neighbors qualify, then wraps everything into a single undo operation.
      */
     private void applyFixes(List<? extends TreeDisplayable> toFix) {
+        // Detect complementary fixes on the same way and upgrade them.
+        // e.g. SET_NAME_REVIEWED + SET_ALIGNMENT_REVIEWED on the same way = REMOVE_TAG
+        toFix = mergeComplementaryFixes(toFix);
+
         List<Command> allCommands = new ArrayList<>();
         for (TreeDisplayable result : toFix) {
             Supplier<Command> supplier = result.getFixSupplier();
