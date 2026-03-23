@@ -39,6 +39,7 @@ import org.openstreetmap.josm.data.UndoRedoHandler;
 import org.openstreetmap.josm.data.UndoRedoHandler.CommandQueuePreciseListener;
 import org.openstreetmap.josm.data.osm.DataSelectionListener;
 import org.openstreetmap.josm.data.osm.DataSet;
+import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.osm.event.SelectionEventManager;
@@ -513,23 +514,96 @@ public class TIGERReviewDialog extends ToggleDialog
     }
 
     /**
-     * Apply fix commands and re-analyze.
+     * Apply fix commands, cascade fully-verified fixes to neighbors, and re-analyze.
+     *
+     * When a road is fully verified (REMOVE_TAG), adjacent unreviewed roads sharing the
+     * same name may become fully verified too (they gain name corroboration from the
+     * newly-fixed neighbor). This method iteratively cascades fixes until no more
+     * neighbors qualify, then wraps everything into a single undo operation.
      */
     private void applyFixes(List<? extends TreeDisplayable> toFix) {
-        List<Command> commands = new ArrayList<>();
+        List<Command> allCommands = new ArrayList<>();
         for (TreeDisplayable result : toFix) {
             Supplier<Command> supplier = result.getFixSupplier();
             if (supplier != null) {
                 Command cmd = supplier.get();
                 if (cmd != null) {
-                    commands.add(cmd);
+                    allCommands.add(cmd);
                 }
             }
         }
-        if (commands.isEmpty()) return;
+        if (allCommands.isEmpty()) return;
 
-        Command combined = SequenceCommand.wrapIfNeeded(tr("TIGER Review fixes"), commands);
-        UndoRedoHandler.getInstance().add(combined);
+        // Execute initial fixes so tags are updated in memory
+        Command initial = SequenceCommand.wrapIfNeeded(tr("TIGER Review fixes"), allCommands);
+        UndoRedoHandler.getInstance().add(initial);
+        int undoCount = 1;
+
+        // Collect REMOVE_TAG ways as the cascade frontier
+        Set<Way> alreadyFixed = new HashSet<>();
+        Set<Way> frontier = new HashSet<>();
+        for (TreeDisplayable result : toFix) {
+            if (result instanceof ReviewResult rr
+                    && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+                alreadyFixed.add(rr.getWay());
+                frontier.add(rr.getWay());
+            }
+        }
+
+        // Cascade: find adjacent roads that are now fully verified
+        int maxCascade = 1000;
+        List<Command> cascadeCommands = new ArrayList<>();
+        while (!frontier.isEmpty() && alreadyFixed.size() < maxCascade) {
+            Set<Way> nextFrontier = new HashSet<>();
+            for (Way fixedWay : frontier) {
+                String name = fixedWay.get("name");
+                if (name == null || name.isEmpty()) continue;
+
+                List<Node> nodes = fixedWay.getNodes();
+                if (nodes.isEmpty()) continue;
+                Node[] endpoints = {nodes.get(0), nodes.get(nodes.size() - 1)};
+
+                for (Node endpoint : endpoints) {
+                    for (OsmPrimitive referrer : endpoint.getReferrers()) {
+                        if (!(referrer instanceof Way neighbor) || alreadyFixed.contains(neighbor)) continue;
+                        if (!"no".equals(neighbor.get("tiger:reviewed"))) continue;
+                        if (!name.equals(neighbor.get("name"))) continue;
+
+                        // Re-analyze this neighbor (tags are updated from prior fixes)
+                        List<ReviewResult> results = TIGERReviewAnalyzer.analyzeWayWithPreferences(neighbor);
+                        for (ReviewResult rr : results) {
+                            if (rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+                                Command cmd = rr.getFixSupplier().get();
+                                if (cmd != null) {
+                                    // Execute immediately so next iteration sees updated tags
+                                    UndoRedoHandler.getInstance().add(cmd);
+                                    undoCount++;
+                                    cascadeCommands.add(cmd);
+                                    alreadyFixed.add(neighbor);
+                                    nextFrontier.add(neighbor);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            frontier = nextFrontier;
+        }
+
+        // Recombine into a single undo operation
+        if (!cascadeCommands.isEmpty()) {
+            // Undo all individual commands
+            for (int i = 0; i < undoCount; i++) {
+                UndoRedoHandler.getInstance().undo();
+            }
+            allCommands.addAll(cascadeCommands);
+            int totalRoads = allCommands.size();
+            Command combined = SequenceCommand.wrapIfNeeded(
+                    tr("TIGER Review fixes ({0} roads)", totalRoads), allCommands);
+            UndoRedoHandler.getInstance().add(combined);
+        }
+
         analyze();
     }
 

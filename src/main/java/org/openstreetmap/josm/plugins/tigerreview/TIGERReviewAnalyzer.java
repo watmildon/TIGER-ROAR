@@ -320,6 +320,52 @@ public final class TIGERReviewAnalyzer {
         return results;
     }
 
+    /**
+     * Analyze a single way using current user preferences.
+     * Convenience wrapper that reads preferences and creates check instances.
+     * Used by cascade fix logic in the dialog.
+     */
+    public static List<ReviewResult> analyzeWayWithPreferences(Way way) {
+        boolean connectedRoadCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_CONNECTED_ROAD_CHECK, true);
+        boolean addressCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_ADDRESS_CHECK, true);
+        boolean nodeVersionCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_NODE_VERSION_CHECK, true);
+        boolean nadCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
+        boolean stripTigerTags = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
+
+        double maxAddressDistance = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_ADDRESS_MAX_DISTANCE,
+                TIGERReviewPreferences.DEFAULT_ADDRESS_MAX_DISTANCE);
+        double minAvgVersion = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NODE_MIN_AVG_VERSION,
+                TIGERReviewPreferences.DEFAULT_NODE_MIN_AVG_VERSION);
+        double minPercentageEdited = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NODE_MIN_PERCENTAGE_EDITED,
+                TIGERReviewPreferences.DEFAULT_NODE_MIN_PERCENTAGE_EDITED);
+        double maxNadDistance = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NAD_MAX_DISTANCE,
+                TIGERReviewPreferences.DEFAULT_NAD_MAX_DISTANCE);
+        String additionalBotUsernames = Config.getPref().get(
+                TIGERReviewPreferences.PREF_ADDITIONAL_BOT_USERNAMES, "");
+        long postTigerNodeIdThreshold = (long) (Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NODE_MIN_POST_TIGER_ID,
+                TIGERReviewPreferences.DEFAULT_NODE_MIN_POST_TIGER_ID) * 1_000_000_000L);
+
+        ConnectedRoadCheck connectedRoadCheck = new ConnectedRoadCheck();
+        NodeVersionCheck nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited,
+                additionalBotUsernames, postTigerNodeIdThreshold);
+        AddressCheck addressCheck = new AddressCheck(maxAddressDistance);
+        NadAddressCheck nadAddressCheck = new NadAddressCheck(maxNadDistance);
+
+        return analyzeWay(way, connectedRoadCheck, nodeVersionCheck, addressCheck, nadAddressCheck,
+                connectedRoadCheckEnabled, addressCheckEnabled, nodeVersionCheckEnabled,
+                nadCheckEnabled, stripTigerTags);
+    }
+
     private static void analyzeUnreviewedRoad(Way way, List<ReviewResult> results,
             ConnectedRoadCheck connectedRoadCheck,
             NodeVersionCheck nodeVersionCheck,
