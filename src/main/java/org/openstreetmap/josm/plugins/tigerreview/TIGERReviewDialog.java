@@ -544,7 +544,8 @@ public class TIGERReviewDialog extends ToggleDialog
         Set<Way> frontier = new HashSet<>();
         for (TreeDisplayable result : toFix) {
             if (result instanceof ReviewResult rr
-                    && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+                    && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG
+                    && rr.getCode() != TIGERReviewTest.TIGER_RESIDUAL_TAGS) {
                 alreadyFixed.add(rr.getWay());
                 frontier.add(rr.getWay());
             }
