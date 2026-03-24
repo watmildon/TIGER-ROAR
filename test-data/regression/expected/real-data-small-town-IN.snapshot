@@ -1,5 +1,5 @@
 # TIGER-ROAR Result Snapshot
-# Total warnings: 239
+# Total warnings: 240
 
 way=17444741 code=10496674 fix=FIX msg="Suggest surface=paved (has lanes tag)"
 way=17444741 code=19939005 fix=REMOVE_TAG msg="90+% of nodes edited"
@@ -63,6 +63,7 @@ way=163510077 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="all nodes edited"
 way=163510077 code=19939017 fix=SUGGEST_NAME msg="North Meridian Road"
 way=163510081 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="all nodes edited"
 way=300953781 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="both nodes shared with verified roads"
+way=677646752 code=10496678 fix=FIX msg="Suggest surface=asphalt (crossing way)"
 way=677646752 code=19939005 fix=REMOVE_TAG msg="80+% of nodes edited"
 way=677646753 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
 way=677646754 code=19939005 fix=REMOVE_TAG msg="all nodes edited"

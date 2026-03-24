@@ -26,11 +26,12 @@ import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.SurfaceRes
  * Analysis engine for surface suggestions, used by both the validator test
  * ({@link SurfaceTest}) and the side panel's Surface tab.
  *
- * <p>Three rules:
+ * <p>Four rules:
  * <ol>
  *   <li>Connected same-name/highway propagation (graph-based BFS)</li>
  *   <li>{@code lanes} tag implies {@code surface=paved}</li>
  *   <li>Service roads inside parking areas inherit the area's surface</li>
+ *   <li>Crossing way surface inference (footway/cycleway crossings)</li>
  * </ol>
  */
 public final class SurfaceAnalyzer {
@@ -129,6 +130,12 @@ public final class SurfaceAnalyzer {
         SurfaceSuggestion connResult = checkImmediateNeighbors(way, surfaceCheck);
         if (connResult != null) {
             return connResult;
+        }
+
+        // Rule 4: crossing way surface inference
+        SurfaceSuggestion crossingResult = checkCrossingsForWay(way);
+        if (crossingResult != null) {
+            return crossingResult;
         }
 
         // Rule 3: parking area containment
@@ -282,6 +289,10 @@ public final class SurfaceAnalyzer {
         timer.start("connectedRoads");
         analyzeConnectedRoads(dataSet, surfaceCheck, results);
 
+        // === Rule 4: Crossing way surface inference ===
+        timer.start("crossings");
+        analyzeCrossings(dataSet, results);
+
         // === Rule 3: Parking area containment ===
         timer.start("parkingAreas");
         analyzeParkingAreas(dataSet, surfaceCheck, results);
@@ -413,6 +424,127 @@ public final class SurfaceAnalyzer {
     }
 
     /**
+     * Rule 4: Infer road surface from connected crossing ways.
+     * A crossing way (highway=footway + footway=crossing, or cycleway equivalent)
+     * with a surface tag provides evidence of the road's surface.
+     */
+    private static void analyzeCrossings(DataSet dataSet,
+                                          Map<Way, SurfaceSuggestion> results) {
+        for (Way way : dataSet.getWays()) {
+            if (results.containsKey(way)) {
+                continue;  // Already has a result from Rule 1
+            }
+            if (!isEligible(way)) {
+                continue;
+            }
+
+            SurfaceSuggestion suggestion = checkCrossingsForWay(way);
+            if (suggestion != null) {
+                results.put(way, suggestion);
+            }
+        }
+    }
+
+    /**
+     * Rule 4 per-way: check crossing ways connected to this road.
+     */
+    private static SurfaceSuggestion checkCrossingsForWay(Way way) {
+        String foundSurface = null;
+        boolean hasConflict = false;
+
+        for (Node node : way.getNodes()) {
+            for (OsmPrimitive referrer : node.getReferrers()) {
+                if (!(referrer instanceof Way crossingWay) || crossingWay == way
+                        || !crossingWay.isUsable()) {
+                    continue;
+                }
+                if (!isCrossingWay(crossingWay)) {
+                    continue;
+                }
+                String crossingSurface = crossingWay.get("surface");
+                if (crossingSurface == null || crossingSurface.isEmpty()) {
+                    continue;
+                }
+                if (isCrossingExcluded(crossingWay, node)) {
+                    continue;
+                }
+
+                if (foundSurface == null) {
+                    foundSurface = crossingSurface;
+                } else if (!foundSurface.equals(crossingSurface)) {
+                    if (isCompatibleUpgrade(foundSurface, crossingSurface)) {
+                        foundSurface = moreSpecific(foundSurface, crossingSurface);
+                    } else if (!isCompatibleUpgrade(crossingSurface, foundSurface)) {
+                        hasConflict = true;
+                    }
+                }
+            }
+        }
+
+        if (hasConflict) {
+            return new SurfaceSuggestion(way, SurfaceTest.SURFACE_CONFLICT,
+                    tr("Connected crossing ways have conflicting surfaces"),
+                    tr("Conflicting surfaces (review needed)"),
+                    null);
+        }
+
+        if (foundSurface != null && SurfaceCheck.checkTagCompatibility(way, foundSurface)) {
+            SurfaceResult result = SurfaceCheck.reconcileWithExisting(way, foundSurface);
+            return toCrossingSuggestion(way, result);
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if a way is a crossing way (footway or cycleway crossing).
+     */
+    private static boolean isCrossingWay(Way way) {
+        String highway = way.get("highway");
+        if ("footway".equals(highway) && "crossing".equals(way.get("footway"))) {
+            return true;
+        }
+        if ("cycleway".equals(highway) && "crossing".equals(way.get("cycleway"))) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Check if a crossing should be excluded from surface inference.
+     * Raised crossings and surface-marked crossings commonly have a different
+     * surface material than the road (e.g., brick pavers on a raised table).
+     *
+     * @param crossingWay the crossing way
+     * @param sharedNode  the node shared between the crossing and the road
+     * @return true if the crossing should be skipped
+     */
+    private static boolean isCrossingExcluded(Way crossingWay, Node sharedNode) {
+        // Check crossing way tags
+        if ("surface".equals(crossingWay.get("crossing:markings"))) {
+            return true;
+        }
+        String wayTrafficCalming = crossingWay.get("traffic_calming");
+        if ("table".equals(wayTrafficCalming) || "raised_crossing".equals(wayTrafficCalming)) {
+            return true;
+        }
+
+        // Check shared node tags
+        if ("surface".equals(sharedNode.get("crossing:markings"))) {
+            return true;
+        }
+        String nodeTrafficCalming = sharedNode.get("traffic_calming");
+        if ("table".equals(nodeTrafficCalming) || "raised_crossing".equals(nodeTrafficCalming)) {
+            return true;
+        }
+        if ("yes".equals(sharedNode.get("crossing:raised"))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Rule 3: Find parking areas and check service roads inside them.
      */
     private static void analyzeParkingAreas(DataSet dataSet, SurfaceCheck surfaceCheck,
@@ -518,6 +650,32 @@ public final class SurfaceAnalyzer {
         return new SurfaceSuggestion(way, SurfaceTest.SURFACE_LANES_PAVED,
                 tr("Suggest surface=paved (has lanes tag)"),
                 tr("Has lanes tag"),
+                result.getSuggestedSurface());
+    }
+
+    private static SurfaceSuggestion toCrossingSuggestion(Way way, SurfaceResult result) {
+        if (result == null) {
+            return null;
+        }
+        if (result.isConflicting()) {
+            return new SurfaceSuggestion(way, SurfaceTest.SURFACE_CONFLICT,
+                    tr("Connected crossing way has incompatible surface"),
+                    tr("Conflicting surfaces (review needed)"),
+                    null);
+        }
+        if (!result.hasSuggestion()) {
+            return null;
+        }
+        if (result.isUpgrade()) {
+            return new SurfaceSuggestion(way, SurfaceTest.SURFACE_CROSSING_UPGRADE,
+                    tr("Upgrade: {0} \u2192 {1} (crossing way)",
+                            way.get("surface"), result.getSuggestedSurface()),
+                    tr("Upgrade generic surface (crossing way)"),
+                    result.getSuggestedSurface());
+        }
+        return new SurfaceSuggestion(way, SurfaceTest.SURFACE_CROSSING,
+                tr("Suggest surface={0} (crossing way)", result.getSuggestedSurface()),
+                tr("Crossing way surface"),
                 result.getSuggestedSurface());
     }
 

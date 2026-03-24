@@ -416,4 +416,304 @@
     <tag k='lanes' v='2' />
   </way>
 
+  <!-- Test 20: Basic crossing inference, footway crossing with surface=asphalt -->
+  <node id='-600' action='modify' visible='true' lat='47.650' lon='-122.100' />
+  <node id='-601' action='modify' visible='true' lat='47.650' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-602' action='modify' visible='true' lat='47.650' lon='-122.102' />
+  <node id='-603' action='modify' visible='true' lat='47.6505' lon='-122.101' />
+  <node id='-604' action='modify' visible='true' lat='47.6495' lon='-122.101' />
+  <way id='-6000' action='modify' visible='true'>
+    <nd ref='-600' />
+    <nd ref='-601' />
+    <nd ref='-602' />
+    <tag k='_test_id' v='20' />
+    <tag k='_test_note' v='Road with no surface, crossing way has surface=asphalt' />
+    <tag k='highway' v='tertiary' />
+    <tag k='name' v='Crossing Street' />
+  </way>
+  <way id='-6001' action='modify' visible='true'>
+    <nd ref='-603' />
+    <nd ref='-601' />
+    <nd ref='-604' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 21: Crossing upgrade, road has surface=paved, crossing has asphalt -->
+  <node id='-610' action='modify' visible='true' lat='47.649' lon='-122.100' />
+  <node id='-611' action='modify' visible='true' lat='47.649' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-612' action='modify' visible='true' lat='47.649' lon='-122.102' />
+  <node id='-613' action='modify' visible='true' lat='47.6495' lon='-122.101' />
+  <node id='-614' action='modify' visible='true' lat='47.6485' lon='-122.101' />
+  <way id='-6100' action='modify' visible='true'>
+    <nd ref='-610' />
+    <nd ref='-611' />
+    <nd ref='-612' />
+    <tag k='_test_id' v='21' />
+    <tag k='_test_note' v='Upgrade: paved to asphalt from crossing way' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Upgrade Crossing Rd' />
+    <tag k='surface' v='paved' />
+  </way>
+  <way id='-6101' action='modify' visible='true'>
+    <nd ref='-613' />
+    <nd ref='-611' />
+    <nd ref='-614' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 22: Crossing conflict, road has gravel but crossing has asphalt -->
+  <node id='-620' action='modify' visible='true' lat='47.648' lon='-122.100' />
+  <node id='-621' action='modify' visible='true' lat='47.648' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-622' action='modify' visible='true' lat='47.648' lon='-122.102' />
+  <node id='-623' action='modify' visible='true' lat='47.6485' lon='-122.101' />
+  <node id='-624' action='modify' visible='true' lat='47.6475' lon='-122.101' />
+  <way id='-6200' action='modify' visible='true'>
+    <nd ref='-620' />
+    <nd ref='-621' />
+    <nd ref='-622' />
+    <tag k='_test_id' v='22' />
+    <tag k='_test_note' v='Conflict: road has gravel, crossing has asphalt' />
+    <tag k='highway' v='residential' />
+    <tag k='name' v='Conflict Crossing Rd' />
+    <tag k='surface' v='gravel' />
+  </way>
+  <way id='-6201' action='modify' visible='true'>
+    <nd ref='-623' />
+    <nd ref='-621' />
+    <nd ref='-624' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 23: Multiple crossings agreeing, both have asphalt -->
+  <node id='-630' action='modify' visible='true' lat='47.647' lon='-122.100' />
+  <node id='-631' action='modify' visible='true' lat='47.647' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-632' action='modify' visible='true' lat='47.647' lon='-122.102'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-633' action='modify' visible='true' lat='47.647' lon='-122.103' />
+  <node id='-634' action='modify' visible='true' lat='47.6475' lon='-122.101' />
+  <node id='-635' action='modify' visible='true' lat='47.6465' lon='-122.101' />
+  <node id='-636' action='modify' visible='true' lat='47.6475' lon='-122.102' />
+  <node id='-637' action='modify' visible='true' lat='47.6465' lon='-122.102' />
+  <way id='-6300' action='modify' visible='true'>
+    <nd ref='-630' />
+    <nd ref='-631' />
+    <nd ref='-632' />
+    <nd ref='-633' />
+    <tag k='_test_id' v='23' />
+    <tag k='_test_note' v='Two crossings both with asphalt, should suggest asphalt' />
+    <tag k='highway' v='tertiary' />
+    <tag k='name' v='Multi Crossing Rd' />
+  </way>
+  <way id='-6301' action='modify' visible='true'>
+    <nd ref='-634' />
+    <nd ref='-631' />
+    <nd ref='-635' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-6302' action='modify' visible='true'>
+    <nd ref='-636' />
+    <nd ref='-632' />
+    <nd ref='-637' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 24: Multiple crossings conflicting, asphalt vs concrete -->
+  <node id='-640' action='modify' visible='true' lat='47.646' lon='-122.100' />
+  <node id='-641' action='modify' visible='true' lat='47.646' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-642' action='modify' visible='true' lat='47.646' lon='-122.102'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-643' action='modify' visible='true' lat='47.646' lon='-122.103' />
+  <node id='-644' action='modify' visible='true' lat='47.6465' lon='-122.101' />
+  <node id='-645' action='modify' visible='true' lat='47.6455' lon='-122.101' />
+  <node id='-646' action='modify' visible='true' lat='47.6465' lon='-122.102' />
+  <node id='-647' action='modify' visible='true' lat='47.6455' lon='-122.102' />
+  <way id='-6400' action='modify' visible='true'>
+    <nd ref='-640' />
+    <nd ref='-641' />
+    <nd ref='-642' />
+    <nd ref='-643' />
+    <tag k='_test_id' v='24' />
+    <tag k='_test_note' v='Two crossings conflicting: asphalt vs concrete' />
+    <tag k='highway' v='tertiary' />
+    <tag k='name' v='Conflict Multi Crossing Rd' />
+  </way>
+  <way id='-6401' action='modify' visible='true'>
+    <nd ref='-644' />
+    <nd ref='-641' />
+    <nd ref='-645' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-6402' action='modify' visible='true'>
+    <nd ref='-646' />
+    <nd ref='-642' />
+    <nd ref='-647' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='concrete' />
+  </way>
+
+  <!-- Test 25: Road already has same surface as crossing, no suggestion -->
+  <node id='-650' action='modify' visible='true' lat='47.645' lon='-122.100' />
+  <node id='-651' action='modify' visible='true' lat='47.645' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-652' action='modify' visible='true' lat='47.645' lon='-122.102' />
+  <node id='-653' action='modify' visible='true' lat='47.6455' lon='-122.101' />
+  <node id='-654' action='modify' visible='true' lat='47.6445' lon='-122.101' />
+  <way id='-6500' action='modify' visible='true'>
+    <nd ref='-650' />
+    <nd ref='-651' />
+    <nd ref='-652' />
+    <tag k='_test_id' v='25' />
+    <tag k='_test_note' v='Road has asphalt, crossing has asphalt, no suggestion' />
+    <tag k='highway' v='residential' />
+    <tag k='name' v='Same Surface Rd' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-6501' action='modify' visible='true'>
+    <nd ref='-653' />
+    <nd ref='-651' />
+    <nd ref='-654' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 26: Way qualifies for both Rule 1 and Rule 4, Rule 1 should win -->
+  <node id='-660' action='modify' visible='true' lat='47.644' lon='-122.100' />
+  <node id='-661' action='modify' visible='true' lat='47.644' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-662' action='modify' visible='true' lat='47.644' lon='-122.102' />
+  <node id='-663' action='modify' visible='true' lat='47.6445' lon='-122.101' />
+  <node id='-664' action='modify' visible='true' lat='47.6435' lon='-122.101' />
+  <way id='-6600' action='modify' visible='true'>
+    <nd ref='-660' />
+    <nd ref='-661' />
+    <tag k='highway' v='tertiary' />
+    <tag k='name' v='Priority Crossing Rd' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-6601' action='modify' visible='true'>
+    <nd ref='-661' />
+    <nd ref='-662' />
+    <tag k='_test_id' v='26' />
+    <tag k='_test_note' v='Qualifies for Rule 1 and Rule 4, Rule 1 should win' />
+    <tag k='highway' v='tertiary' />
+    <tag k='name' v='Priority Crossing Rd' />
+  </way>
+  <way id='-6602' action='modify' visible='true'>
+    <nd ref='-663' />
+    <nd ref='-661' />
+    <nd ref='-664' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='asphalt' />
+  </way>
+
+  <!-- Test 27: Crossing with crossing:markings=surface, should be excluded -->
+  <node id='-670' action='modify' visible='true' lat='47.643' lon='-122.100' />
+  <node id='-671' action='modify' visible='true' lat='47.643' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+  </node>
+  <node id='-672' action='modify' visible='true' lat='47.643' lon='-122.102' />
+  <node id='-673' action='modify' visible='true' lat='47.6435' lon='-122.101' />
+  <node id='-674' action='modify' visible='true' lat='47.6425' lon='-122.101' />
+  <way id='-6700' action='modify' visible='true'>
+    <nd ref='-670' />
+    <nd ref='-671' />
+    <nd ref='-672' />
+    <tag k='_test_id' v='27' />
+    <tag k='_test_note' v='Crossing has crossing:markings=surface, excluded' />
+    <tag k='highway' v='tertiary' />
+    <tag k='name' v='Markings Surface Rd' />
+  </way>
+  <way id='-6701' action='modify' visible='true'>
+    <nd ref='-673' />
+    <nd ref='-671' />
+    <nd ref='-674' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='paving_stones' />
+    <tag k='crossing:markings' v='surface' />
+  </way>
+
+  <!-- Test 28: Shared node has traffic_calming=table, should be excluded -->
+  <node id='-680' action='modify' visible='true' lat='47.642' lon='-122.100' />
+  <node id='-681' action='modify' visible='true' lat='47.642' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+    <tag k='traffic_calming' v='table' />
+  </node>
+  <node id='-682' action='modify' visible='true' lat='47.642' lon='-122.102' />
+  <node id='-683' action='modify' visible='true' lat='47.6425' lon='-122.101' />
+  <node id='-684' action='modify' visible='true' lat='47.6415' lon='-122.101' />
+  <way id='-6800' action='modify' visible='true'>
+    <nd ref='-680' />
+    <nd ref='-681' />
+    <nd ref='-682' />
+    <tag k='_test_id' v='28' />
+    <tag k='_test_note' v='Shared node has traffic_calming=table, excluded' />
+    <tag k='highway' v='residential' />
+    <tag k='name' v='Table Crossing Rd' />
+  </way>
+  <way id='-6801' action='modify' visible='true'>
+    <nd ref='-683' />
+    <nd ref='-681' />
+    <nd ref='-684' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='paving_stones' />
+  </way>
+
+  <!-- Test 29: Shared node has crossing:raised=yes, should be excluded -->
+  <node id='-690' action='modify' visible='true' lat='47.641' lon='-122.100' />
+  <node id='-691' action='modify' visible='true' lat='47.641' lon='-122.101'>
+    <tag k='highway' v='crossing' />
+    <tag k='crossing:raised' v='yes' />
+  </node>
+  <node id='-692' action='modify' visible='true' lat='47.641' lon='-122.102' />
+  <node id='-693' action='modify' visible='true' lat='47.6415' lon='-122.101' />
+  <node id='-694' action='modify' visible='true' lat='47.6405' lon='-122.101' />
+  <way id='-6900' action='modify' visible='true'>
+    <nd ref='-690' />
+    <nd ref='-691' />
+    <nd ref='-692' />
+    <tag k='_test_id' v='29' />
+    <tag k='_test_note' v='Shared node has crossing:raised=yes, excluded' />
+    <tag k='highway' v='tertiary' />
+    <tag k='name' v='Raised Crossing Rd' />
+  </way>
+  <way id='-6901' action='modify' visible='true'>
+    <nd ref='-693' />
+    <nd ref='-691' />
+    <nd ref='-694' />
+    <tag k='highway' v='footway' />
+    <tag k='footway' v='crossing' />
+    <tag k='surface' v='concrete' />
+  </way>
+
 </osm>

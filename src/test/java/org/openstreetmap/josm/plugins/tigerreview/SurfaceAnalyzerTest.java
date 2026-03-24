@@ -49,8 +49,8 @@ class SurfaceAnalyzerTest {
     void testSurfaceCodesInRange() {
         List<SurfaceSuggestion> results = SurfaceAnalyzer.analyzeAll(surfaceTestData);
         for (SurfaceSuggestion s : results) {
-            assertTrue(s.getCode() >= 10496671 && s.getCode() <= 10496677,
-                    "Surface code should be in range 10496671-10496677, got: " + s.getCode());
+            assertTrue(s.getCode() >= 10496671 && s.getCode() <= 10496679,
+                    "Surface code should be in range 10496671-10496679, got: " + s.getCode());
         }
     }
 
@@ -202,6 +202,80 @@ class SurfaceAnalyzerTest {
                 "smoothness=horrible should block asphalt suggestion");
     }
 
+    // --- Rule 4: Crossing way surface inference ---
+
+    @Test
+    void testCrossingBasic() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("20"),
+                "Should suggest surface from crossing way");
+        assertEquals(SurfaceTest.SURFACE_CROSSING, results.get("20").getCode());
+        assertEquals("asphalt", results.get("20").getSurfaceValue());
+    }
+
+    @Test
+    void testCrossingUpgrade() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("21"),
+                "Should upgrade paved to asphalt from crossing way");
+        assertEquals(SurfaceTest.SURFACE_CROSSING_UPGRADE, results.get("21").getCode());
+        assertEquals("asphalt", results.get("21").getSurfaceValue());
+    }
+
+    @Test
+    void testCrossingConflictExisting() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("22"),
+                "Should flag conflict for gravel road with asphalt crossing");
+        assertEquals(SurfaceTest.SURFACE_CONFLICT, results.get("22").getCode());
+        assertNull(results.get("22").getFixSupplier(), "Conflict should have no fix");
+    }
+
+    @Test
+    void testCrossingMultipleAgree() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("23"),
+                "Should suggest surface from multiple agreeing crossings");
+        assertEquals(SurfaceTest.SURFACE_CROSSING, results.get("23").getCode());
+        assertEquals("asphalt", results.get("23").getSurfaceValue());
+    }
+
+    @Test
+    void testCrossingMultipleConflict() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("24"),
+                "Should flag conflict for crossings with different surfaces");
+        assertEquals(SurfaceTest.SURFACE_CONFLICT, results.get("24").getCode());
+    }
+
+    @Test
+    void testCrossingSameNoSuggestion() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("25"),
+                "Road with same surface as crossing should not get suggestion");
+    }
+
+    @Test
+    void testCrossingMarkingsSurfaceExcluded() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("27"),
+                "Crossing with crossing:markings=surface should be excluded");
+    }
+
+    @Test
+    void testCrossingRaisedTableExcluded() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("28"),
+                "Crossing with traffic_calming=table on node should be excluded");
+    }
+
+    @Test
+    void testCrossingRaisedNodeExcluded() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("29"),
+                "Crossing with crossing:raised=yes on node should be excluded");
+    }
+
     // --- Priority ---
 
     @Test
@@ -211,6 +285,15 @@ class SurfaceAnalyzerTest {
                 "Way qualifying for both Rule 1 and Rule 2 should have a result");
         assertEquals(SurfaceTest.SURFACE_CONNECTED_ROAD, results.get("19").getCode(),
                 "Should prefer Rule 1 (connected road) over Rule 2 (lanes)");
+    }
+
+    @Test
+    void testRule1PriorityOverRule4() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("26"),
+                "Way qualifying for both Rule 1 and Rule 4 should have a result");
+        assertEquals(SurfaceTest.SURFACE_CONNECTED_ROAD, results.get("26").getCode(),
+                "Should prefer Rule 1 (connected road) over Rule 4 (crossing)");
     }
 
     // --- General ---

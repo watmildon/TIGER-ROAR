@@ -51,6 +51,12 @@ public class SurfaceTest extends Test {
     /** Generic surface upgrade from parking area */
     public static final int SURFACE_PARKING_AREA_UPGRADE = CODE_PREFIX + 7;
 
+    /** Surface inferred from connected crossing way */
+    public static final int SURFACE_CROSSING = CODE_PREFIX + 8;
+
+    /** Generic surface upgrade from connected crossing way */
+    public static final int SURFACE_CROSSING_UPGRADE = CODE_PREFIX + 9;
+
     /** Group message for all surface warnings in the validator tree */
     private static final String GROUP_MESSAGE = tr("Surface Suggestion");
 
