@@ -65,9 +65,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for enabling Mapillary speed limit analysis */
     public static final String PREF_ENABLE_MAPILLARY_SPEED = "tigerreview.check.mapillary.speed";
 
-    /** Preference key for enabling Mapillary road marking surface corroboration */
-    public static final String PREF_ENABLE_MAPILLARY_MARKING = "tigerreview.check.mapillary.marking";
-
     /** Preference key for Mapillary API token */
     public static final String PREF_MAPILLARY_API_KEY = "tigerreview.mapillary.apiKey";
 
@@ -109,7 +106,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JSpinner postTigerIdSpinner;
     private JCheckBox mapillaryCheckBox;
     private JCheckBox mapillarySpeedCheckBox;
-    private JCheckBox mapillaryMarkingCheckBox;
     private JTextField mapillaryApiKeyField;
     private JSpinner mapillaryDistanceSpinner;
 
@@ -263,18 +259,10 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         mapillarySpeedCheckBox.setEnabled(mapillaryCheckBox.isSelected());
         addIndentedCheckBox(mapillaryPanel, gbc, row++, mapillarySpeedCheckBox);
 
-        mapillaryMarkingCheckBox = new JCheckBox(tr("Road markings (surface corroboration)"));
-        mapillaryMarkingCheckBox.setToolTipText(
-                tr("Use Mapillary road marking detections (lane lines, stop lines, crosswalks) to corroborate paved surface suggestions"));
-        mapillaryMarkingCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_MAPILLARY_MARKING, true));
-        mapillaryMarkingCheckBox.setEnabled(mapillaryCheckBox.isSelected());
-        addIndentedCheckBox(mapillaryPanel, gbc, row++, mapillaryMarkingCheckBox);
-
         // Enable/disable sub-checkboxes when master toggle changes
         mapillaryCheckBox.addActionListener(e -> {
             boolean enabled = mapillaryCheckBox.isSelected();
             mapillarySpeedCheckBox.setEnabled(enabled);
-            mapillaryMarkingCheckBox.setEnabled(enabled);
         });
 
         String currentApiKey = Config.getPref().get(PREF_MAPILLARY_API_KEY, "");
@@ -370,7 +358,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         // Save Mapillary settings
         Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_CHECK, mapillaryCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_SPEED, mapillarySpeedCheckBox.isSelected());
-        Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_MARKING, mapillaryMarkingCheckBox.isSelected());
         Config.getPref().put(PREF_MAPILLARY_API_KEY, mapillaryApiKeyField.getText().trim());
         Config.getPref().putDouble(PREF_MAPILLARY_MAX_DISTANCE, (Double) mapillaryDistanceSpinner.getValue());
 

@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.data.osm.DataSet;
-import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
 
 /**
@@ -55,95 +54,166 @@ class SurfaceAnalyzerTest {
         }
     }
 
-    @Test
-    void testResultsByTestId() {
-        Map<String, SurfaceSuggestion> resultsByTestId = buildResultMap(surfaceTestData);
+    // --- Rule 1: Connected same-name/highway propagation ---
 
-        // Verify we got some results with _test_id tags
-        assertFalse(resultsByTestId.isEmpty(), "Should have results with _test_id tags");
+    @Test
+    void testBasicPropagation() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("1"), "Should suggest surface for gap in same-name road");
+        assertEquals(SurfaceTest.SURFACE_CONNECTED_ROAD, results.get("1").getCode());
+        assertEquals("asphalt", results.get("1").getSurfaceValue());
     }
 
-    // --- Tag compatibility tests ---
+    @Test
+    void testTransitivePropagation() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("2a"), "First gap should get surface");
+        assertTrue(results.containsKey("2b"), "Second gap should get surface");
+        assertTrue(results.containsKey("2c"), "Third gap should get surface");
+        assertEquals("asphalt", results.get("2a").getSurfaceValue());
+        assertEquals("asphalt", results.get("2b").getSurfaceValue());
+        assertEquals("asphalt", results.get("2c").getSurfaceValue());
+    }
+
+    @Test
+    void testConflictInComponent() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("3"), "Should flag conflict for asphalt vs gravel");
+        assertEquals(SurfaceTest.SURFACE_CONFLICT, results.get("3").getCode());
+        assertNull(results.get("3").getFixSupplier(), "Conflict should have no fix");
+    }
+
+    @Test
+    void testGenericUpgradeFromConnectedRoad() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("4"), "Should upgrade paved to asphalt");
+        assertEquals(SurfaceTest.SURFACE_CONNECTED_ROAD_UPGRADE, results.get("4").getCode());
+        assertEquals("asphalt", results.get("4").getSurfaceValue());
+    }
+
+    @Test
+    void testNoPropagationUnnamed() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("5"), "Should not propagate across unnamed roads");
+    }
+
+    @Test
+    void testNoPropagationDifferentHighway() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("6"),
+                "Should not propagate across different highway types");
+    }
+
+    @Test
+    void testExistingIncompatibleSurfaceConflict() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("7"),
+                "Should flag conflict for existing gravel vs connected asphalt");
+        assertEquals(SurfaceTest.SURFACE_CONFLICT, results.get("7").getCode());
+    }
+
+    // --- Rule 2: Lanes tag ---
+
+    @Test
+    void testLanesSuggestsPaved() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("8"), "lanes tag should suggest paved");
+        assertEquals(SurfaceTest.SURFACE_LANES_PAVED, results.get("8").getCode());
+        assertEquals("paved", results.get("8").getSurfaceValue());
+    }
+
+    @Test
+    void testLanesUnpavedConflict() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("9"), "lanes + unpaved should conflict");
+        assertEquals(SurfaceTest.SURFACE_LANES_CONFLICT, results.get("9").getCode());
+        assertNull(results.get("9").getFixSupplier(), "Conflict should have no fix");
+    }
+
+    @Test
+    void testLanesAlreadyPavedNoSuggestion() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("10"),
+                "lanes + existing asphalt should not produce a suggestion");
+    }
+
+    @Test
+    void testLanes4wdOnlyVeto() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("11"),
+                "4wd_only=yes should block lanes paved suggestion");
+    }
+
+    // --- Rule 3: Parking area ---
+
+    @Test
+    void testParkingAreaInheritSurface() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("12"),
+                "Service inside parking should inherit surface");
+        assertEquals(SurfaceTest.SURFACE_PARKING_AREA, results.get("12").getCode());
+        assertEquals("asphalt", results.get("12").getSurfaceValue());
+    }
+
+    @Test
+    void testParkingAreaPartiallyOutside() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("13"),
+                "Service partially outside parking should not get suggestion");
+    }
+
+    @Test
+    void testParkingAreaNonService() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("14"),
+                "Non-service road inside parking should not get suggestion");
+    }
+
+    @Test
+    void testParkingAreaExistingConflict() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("15"),
+                "Service inside parking with conflicting surface should flag conflict");
+        assertEquals(SurfaceTest.SURFACE_CONFLICT, results.get("15").getCode());
+    }
+
+    @Test
+    void testParkingAreaGenericUpgrade() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertTrue(results.containsKey("16"),
+                "Service inside parking with paved should upgrade to asphalt");
+        assertEquals(SurfaceTest.SURFACE_PARKING_AREA_UPGRADE, results.get("16").getCode());
+        assertEquals("asphalt", results.get("16").getSurfaceValue());
+    }
+
+    // --- Tag compatibility ---
 
     @Test
     void testTracktypeGrade4BlocksAsphalt() {
         Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertFalse(results.containsKey("13"),
+        assertFalse(results.containsKey("17"),
                 "tracktype=grade4 should block asphalt suggestion");
-    }
-
-    @Test
-    void testTracktypeGrade1AllowsAsphalt() {
-        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertTrue(results.containsKey("14"),
-                "tracktype=grade1 should allow asphalt suggestion");
-        assertNotNull(results.get("14").getFixSupplier(),
-                "tracktype=grade1 + asphalt should be fixable");
-    }
-
-    @Test
-    void testTracktypeGrade1BlocksDirt() {
-        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertFalse(results.containsKey("15"),
-                "tracktype=grade1 should block dirt suggestion");
-    }
-
-    @Test
-    void test4wdOnlyBlocksAsphalt() {
-        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertFalse(results.containsKey("16"),
-                "4wd_only=yes should block asphalt suggestion");
     }
 
     @Test
     void testSmoothnessHorribleBlocksAsphalt() {
         Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertFalse(results.containsKey("17"),
+        assertFalse(results.containsKey("18"),
                 "smoothness=horrible should block asphalt suggestion");
     }
 
-    @Test
-    void testSmoothnessExcellentBlocksDirt() {
-        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertFalse(results.containsKey("18"),
-                "smoothness=excellent should block dirt suggestion");
-    }
+    // --- Priority ---
 
     @Test
-    void testSmoothnessBadDemotesPaved() {
+    void testRule1PriorityOverRule2() {
         Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
         assertTrue(results.containsKey("19"),
-                "smoothness=bad should still suggest asphalt (demoted, not blocked)");
-        // Unnamed service ways at both endpoints → HIGH, demoted one tier → MEDIUM
-        assertEquals(SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED, results.get("19").getCode(),
-                "smoothness=bad should demote high confidence to medium");
+                "Way qualifying for both Rule 1 and Rule 2 should have a result");
+        assertEquals(SurfaceTest.SURFACE_CONNECTED_ROAD, results.get("19").getCode(),
+                "Should prefer Rule 1 (connected road) over Rule 2 (lanes)");
     }
 
-    @Test
-    void testTrackWithoutTracktypeDemotesPaved() {
-        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertTrue(results.containsKey("20"),
-                "highway=track without tracktype should still suggest asphalt (demoted, not blocked)");
-        // Unnamed track ways at both endpoints → HIGH, demoted one tier → MEDIUM
-        assertEquals(SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED, results.get("20").getCode(),
-                "highway=track without tracktype should demote confidence");
-    }
-
-    @Test
-    void testTracktypeGrade3BlocksConcrete() {
-        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertFalse(results.containsKey("21"),
-                "tracktype=grade3 should block concrete suggestion");
-    }
-
-    @Test
-    void testTracktypeGrade2AllowsGravel() {
-        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
-        assertTrue(results.containsKey("22"),
-                "tracktype=grade2 should allow gravel suggestion");
-        assertNotNull(results.get("22").getFixSupplier(),
-                "tracktype=grade2 + gravel should be fixable");
-    }
+    // --- General ---
 
     @Test
     void testFixableResultsProduceCommands() {
@@ -160,7 +230,8 @@ class SurfaceAnalyzerTest {
     void testConflictResultsHaveNoFix() {
         List<SurfaceSuggestion> results = SurfaceAnalyzer.analyzeAll(surfaceTestData);
         for (SurfaceSuggestion s : results) {
-            if (s.getCode() == SurfaceTest.SURFACE_CONFLICT) {
+            if (s.getCode() == SurfaceTest.SURFACE_CONFLICT
+                    || s.getCode() == SurfaceTest.SURFACE_LANES_CONFLICT) {
                 assertNull(s.getFixSupplier(),
                         "Conflict results should not have a fix supplier");
             }

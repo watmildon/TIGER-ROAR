@@ -1,8 +1,6 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.tigerreview.checks;
 
-import static org.openstreetmap.josm.tools.I18n.tr;
-
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -10,20 +8,21 @@ import java.util.List;
 import java.util.Set;
 
 import org.openstreetmap.josm.data.osm.Node;
-import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
-import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewPreferences;
-import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryClient.MarkingDetection;
-import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataCache;
-import org.openstreetmap.josm.spi.preferences.Config;
+import org.openstreetmap.josm.tools.Geometry;
 
 /**
- * Checks if a road's surface can be inferred from connected roads.
+ * Utility methods for surface inference checks.
  *
- * A surface is suggested if connected roads at both ends have the same surface tag.
- * Confidence is graded based on whether connections are at the connected road's
- * endpoint and share the same name + highway type.
+ * Three rules:
+ * <ol>
+ *   <li>Connected same-name/highway propagation (graph-based, driven by SurfaceAnalyzer)</li>
+ *   <li>{@code lanes} tag implies {@code surface=paved}</li>
+ *   <li>Service roads inside parking areas inherit the area's surface</li>
+ * </ol>
+ *
+ * Tag compatibility vetoes apply to all rules.
  */
 public class SurfaceCheck {
 
@@ -37,7 +36,7 @@ public class SurfaceCheck {
     private static final Set<String> ROUGH_SMOOTHNESS = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList("horrible", "very_horrible", "impassable")));
 
-    /** Smooth paved surface types (asphalt, concrete) that conflict with very rough smoothness */
+    /** Smooth paved surface types that conflict with very rough smoothness */
     private static final Set<String> SMOOTH_PAVED_SURFACES = Collections.unmodifiableSet(
             new HashSet<>(Arrays.asList("asphalt", "chipseal", "concrete",
                     "concrete:lanes", "concrete:plates")));
@@ -48,90 +47,33 @@ public class SurfaceCheck {
                     "ground", "woodchips")));
 
     /**
-     * Confidence tier for surface suggestions.
-     */
-    public enum ConfidenceTier {
-        /** Both ends connect to same-name+highway roads at their endpoints */
-        HIGH,
-        /** Both ends have a surface but connections are mixed quality */
-        MEDIUM,
-        /** Only one end has a surface from connected roads */
-        LOW,
-        /** No suggestion available */
-        NONE;
-
-        /**
-         * @return a user-facing label for this confidence tier
-         */
-        public String getLabel() {
-            switch (this) {
-            case HIGH:
-                return tr("high confidence");
-            case MEDIUM:
-                return tr("medium confidence");
-            default:
-                return tr("low confidence");
-            }
-        }
-
-        /**
-         * @return the next lower confidence tier (HIGH→MEDIUM, MEDIUM→LOW, LOW→NONE)
-         */
-        public ConfidenceTier demote() {
-            switch (this) {
-            case HIGH:
-                return MEDIUM;
-            case MEDIUM:
-                return LOW;
-            case LOW:
-                return NONE;
-            default:
-                return NONE;
-            }
-        }
-    }
-
-    /**
-     * Result of surface check with suggested value.
+     * Result of a surface check.
      */
     public static class SurfaceResult {
         private final String suggestedSurface;
-        private final ConfidenceTier confidence;
         private final boolean conflicting;
         private final boolean upgrade;
-        private final boolean hasMarkingEvidence;
 
-        public SurfaceResult(String suggestedSurface, ConfidenceTier confidence) {
-            this(suggestedSurface, confidence, false, false, false);
+        public SurfaceResult(String suggestedSurface) {
+            this(suggestedSurface, false, false);
         }
 
-        private SurfaceResult(String suggestedSurface, ConfidenceTier confidence,
-                              boolean conflicting, boolean upgrade, boolean hasMarkingEvidence) {
+        private SurfaceResult(String suggestedSurface, boolean conflicting, boolean upgrade) {
             this.suggestedSurface = suggestedSurface;
-            this.confidence = confidence;
             this.conflicting = conflicting;
             this.upgrade = upgrade;
-            this.hasMarkingEvidence = hasMarkingEvidence;
         }
 
-        static SurfaceResult conflict() {
-            return new SurfaceResult(null, ConfidenceTier.NONE, true, false, false);
+        public static SurfaceResult conflict() {
+            return new SurfaceResult(null, true, false);
         }
 
-        static SurfaceResult upgrade(String surface, ConfidenceTier confidence) {
-            return new SurfaceResult(surface, confidence, false, true, false);
+        public static SurfaceResult upgrade(String surface) {
+            return new SurfaceResult(surface, false, true);
         }
 
-        static SurfaceResult upgrade(String surface, ConfidenceTier confidence, boolean hasMarkingEvidence) {
-            return new SurfaceResult(surface, confidence, false, true, hasMarkingEvidence);
-        }
-
-        SurfaceResult withMarkingEvidence() {
-            return new SurfaceResult(suggestedSurface, confidence, conflicting, upgrade, true);
-        }
-
-        SurfaceResult withConfidence(ConfidenceTier newConfidence) {
-            return new SurfaceResult(suggestedSurface, newConfidence, conflicting, upgrade, hasMarkingEvidence);
+        public static SurfaceResult none() {
+            return new SurfaceResult(null, false, false);
         }
 
         /**
@@ -142,21 +84,7 @@ public class SurfaceCheck {
         }
 
         /**
-         * @return the confidence tier for this suggestion
-         */
-        public ConfidenceTier getConfidence() {
-            return confidence;
-        }
-
-        /**
-         * @return true if the suggestion comes from roads at both ends
-         */
-        public boolean isBothEnds() {
-            return confidence == ConfidenceTier.HIGH || confidence == ConfidenceTier.MEDIUM;
-        }
-
-        /**
-         * @return true if connected roads have conflicting surfaces (no auto-fix)
+         * @return true if incompatible surfaces were found (no auto-fix)
          */
         public boolean isConflicting() {
             return conflicting;
@@ -175,242 +103,170 @@ public class SurfaceCheck {
         public boolean hasSuggestion() {
             return suggestedSurface != null;
         }
-
-        /**
-         * @return true if Mapillary road marking detections corroborate this suggestion
-         */
-        public boolean hasMarkingEvidence() {
-            return hasMarkingEvidence;
-        }
     }
 
     /**
-     * Surface info gathered at a single endpoint node.
-     */
-    private static class NodeSurfaceInfo {
-        /** Consistent surface value, or null if none or conflicting */
-        final String surface;
-        /** True if connected roads at this node have conflicting surfaces */
-        final boolean hasConflict;
-        /** True if the surface came from a same-name+highway road connected at its endpoint */
-        final boolean endpointOfSameRoad;
-
-        NodeSurfaceInfo(String surface, boolean hasConflict, boolean endpointOfSameRoad) {
-            this.surface = surface;
-            this.hasConflict = hasConflict;
-            this.endpointOfSameRoad = endpointOfSameRoad;
-        }
-    }
-
-    /**
-     * Check if a surface can be inferred from connected roads and/or Mapillary markings.
+     * Check Rule 2: lanes tag implies surface=paved.
      *
-     * @param way The way to check (should not already have a surface tag)
-     * @return SurfaceResult with suggested surface if found
+     * @param way the way to check
+     * @return a result suggesting paved, a conflict, or none
      */
-    public SurfaceResult checkSurface(Way way) {
+    public SurfaceResult checkLanesTag(Way way) {
+        String lanes = way.get("lanes");
+        if (lanes == null) {
+            return SurfaceResult.none();
+        }
+
         String existingSurface = way.get(SURFACE);
 
-        // Already has a specific surface — nothing to suggest
-        if (existingSurface != null
-                && !"paved".equals(existingSurface)
-                && !"unpaved".equals(existingSurface)) {
-            return new SurfaceResult(null, ConfidenceTier.NONE);
-        }
-
-        List<Node> nodes = way.getNodes();
-        if (nodes.isEmpty()) {
-            return new SurfaceResult(null, ConfidenceTier.NONE);
-        }
-
-        Node firstNode = nodes.get(0);
-        Node lastNode = nodes.get(nodes.size() - 1);
-
-        String name = way.get("name");
-        String highway = way.get("highway");
-
-        NodeSurfaceInfo infoAtFirst = getSurfaceFromConnections(firstNode, way, name, highway);
-        NodeSurfaceInfo infoAtLast = getSurfaceFromConnections(lastNode, way, name, highway);
-
-        SurfaceResult result = evaluateEndpoints(infoAtFirst, infoAtLast);
-
-        // Check for Mapillary road marking evidence
-        boolean hasMarkings = hasNearbyMarkings(way);
-
-        // If connected-road analysis found nothing but markings exist, suggest "paved"
-        if (!result.hasSuggestion() && !result.isConflicting() && hasMarkings) {
-            result = new SurfaceResult("paved", ConfidenceTier.LOW);
-            result = result.withMarkingEvidence();
-        }
-
-        // If connected-road analysis suggests paved and markings agree, boost confidence
-        if (result.hasSuggestion() && hasMarkings && !result.hasMarkingEvidence()) {
-            String suggested = result.getSuggestedSurface();
-            if (HighwayConstants.PAVED_SURFACES.contains(suggested) || "paved".equals(suggested)) {
-                ConfidenceTier boosted = result.getConfidence() == ConfidenceTier.LOW
-                        ? ConfidenceTier.MEDIUM : result.getConfidence();
-                result = result.withConfidence(boosted).withMarkingEvidence();
+        // No surface -> suggest paved
+        if (existingSurface == null) {
+            if (checkTagCompatibility(way, "paved")) {
+                return new SurfaceResult("paved");
             }
+            return SurfaceResult.none();
         }
 
-        // Check if the way's own tags contradict or weaken the suggestion
-        if (result.hasSuggestion()) {
-            ConfidenceTier adjusted = checkTagCompatibility(way, result.getSuggestedSurface(),
-                    result.getConfidence());
-            if (adjusted == ConfidenceTier.NONE) {
-                return new SurfaceResult(null, ConfidenceTier.NONE);
-            }
-            result = result.withConfidence(adjusted);
+        // Already paved or a specific paved surface -> no action needed
+        if ("paved".equals(existingSurface)
+                || HighwayConstants.PAVED_SURFACES.contains(existingSurface)) {
+            return SurfaceResult.none();
         }
 
-        // For generic surfaces, validate the suggestion is in the same category
-        if (existingSurface != null && result.hasSuggestion()) {
-            if (!isSameCategory(existingSurface, result.getSuggestedSurface())) {
-                return new SurfaceResult(null, ConfidenceTier.NONE);
-            }
-            return SurfaceResult.upgrade(result.getSuggestedSurface(),
-                    result.getConfidence(), result.hasMarkingEvidence());
-        }
-
-        return result;
+        // Has an unpaved surface -> conflict
+        return SurfaceResult.conflict();
     }
 
     /**
-     * Check if there are Mapillary road marking detections near a way.
-     * Returns false if the Mapillary check is disabled or no data is loaded.
+     * Check Rule 3: service road inside a parking area inherits the area's surface.
+     *
+     * @param way         the service road to check
+     * @param parkingArea the containing parking area (closed way with surface tag)
+     * @return a result with the suggested surface, a conflict, upgrade, or none
      */
-    private boolean hasNearbyMarkings(Way way) {
-        if (!Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)
-                || !Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_MARKING, true)) {
-            return false;
+    public SurfaceResult checkParkingArea(Way way, Way parkingArea) {
+        String areaSurface = parkingArea.get(SURFACE);
+        if (areaSurface == null || areaSurface.isEmpty()) {
+            return SurfaceResult.none();
         }
 
-        MapillaryDataCache cache = MapillaryDataCache.getInstance();
-        if (!cache.isReady()) {
-            return false;
+        if (!checkTagCompatibility(way, areaSurface)) {
+            return SurfaceResult.none();
         }
 
-        double maxDistance = Config.getPref().getDouble(
-                TIGERReviewPreferences.PREF_MAPILLARY_MAX_DISTANCE,
-                TIGERReviewPreferences.DEFAULT_MAPILLARY_MAX_DISTANCE);
-
-        List<MarkingDetection> nearby = cache.findNearbyMarkings(way, maxDistance);
-        return !nearby.isEmpty();
+        return reconcileWithExisting(way, areaSurface);
     }
 
     /**
-     * Evaluate endpoint surface info and produce a result.
+     * Reconcile a suggested surface with an existing surface on a way.
+     * Returns a suggestion, upgrade, conflict, or none as appropriate.
+     *
+     * @param way              the way
+     * @param suggestedSurface the surface to suggest
+     * @return the result
      */
-    private SurfaceResult evaluateEndpoints(NodeSurfaceInfo infoAtFirst, NodeSurfaceInfo infoAtLast) {
-        // Best case: both ends have matching surfaces
-        if (infoAtFirst.surface != null && infoAtFirst.surface.equals(infoAtLast.surface)) {
-            ConfidenceTier tier = (infoAtFirst.endpointOfSameRoad && infoAtLast.endpointOfSameRoad)
-                    ? ConfidenceTier.HIGH
-                    : ConfidenceTier.MEDIUM;
-            return new SurfaceResult(infoAtFirst.surface, tier);
+    public static SurfaceResult reconcileWithExisting(Way way, String suggestedSurface) {
+        String existingSurface = way.get("surface");
+
+        // No existing surface -> new suggestion
+        if (existingSurface == null) {
+            return new SurfaceResult(suggestedSurface);
         }
 
-        // Conflict: both ends have a surface but they disagree
-        if (infoAtFirst.surface != null && infoAtLast.surface != null) {
-            return SurfaceResult.conflict();
+        // Same value -> nothing to do
+        if (existingSurface.equals(suggestedSurface)) {
+            return SurfaceResult.none();
         }
 
-        // Conflict: one end has a surface, the other has a node-level conflict
-        if (infoAtFirst.surface != null && infoAtLast.hasConflict) {
-            return SurfaceResult.conflict();
-        }
-        if (infoAtLast.surface != null && infoAtFirst.hasConflict) {
-            return SurfaceResult.conflict();
+        // Generic -> specific upgrade
+        if (isSameCategory(existingSurface, suggestedSurface)) {
+            return SurfaceResult.upgrade(suggestedSurface);
         }
 
-        // One end has a surface, the other has no info — suggest with lower confidence
-        if (infoAtFirst.surface != null) {
-            return new SurfaceResult(infoAtFirst.surface, ConfidenceTier.LOW);
-        }
-        if (infoAtLast.surface != null) {
-            return new SurfaceResult(infoAtLast.surface, ConfidenceTier.LOW);
-        }
+        // Incompatible existing surface -> conflict
+        return SurfaceResult.conflict();
+    }
 
-        // Both ends have no info
-        return new SurfaceResult(null, ConfidenceTier.NONE);
+    /**
+     * Check if a way is fully inside a closed parking area.
+     * All nodes of the way must be inside the polygon formed by the parking area.
+     *
+     * @param way         the service road
+     * @param parkingArea the closed parking area way
+     * @return true if all nodes of the way are inside the parking area
+     */
+    public static boolean isWayInsideArea(Way way, Way parkingArea) {
+        List<Node> polygonNodes = parkingArea.getNodes();
+        for (Node node : way.getNodes()) {
+            if (!Geometry.nodeInsidePolygon(node, polygonNodes)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
      * Check if the way's own tags are compatible with the suggested surface.
-     * Returns the adjusted confidence tier, or NONE to block the suggestion entirely.
+     * Returns false to block the suggestion entirely.
      *
-     * <p>Hard rejects (returns NONE):
+     * <p>Hard rejects:
      * <ul>
      *   <li>tracktype grade2-5 + paved suggestion</li>
-     *   <li>tracktype grade1 + soft unpaved suggestion (dirt/grass/mud/earth/sand/ground)</li>
+     *   <li>tracktype grade1 + soft unpaved suggestion</li>
      *   <li>4wd_only=yes + paved suggestion</li>
      *   <li>smoothness excellent/good + soft unpaved suggestion</li>
-     *   <li>smoothness horrible/very_horrible/impassable + smooth paved suggestion (asphalt/concrete)</li>
+     *   <li>smoothness horrible/very_horrible/impassable + smooth paved suggestion</li>
      * </ul>
      *
-     * <p>Soft demotions (reduces confidence one tier):
-     * <ul>
-     *   <li>highway=track (without tracktype) + paved suggestion</li>
-     *   <li>smoothness bad/very_bad + paved suggestion</li>
-     * </ul>
+     * @param way              the way to check
+     * @param suggestedSurface the proposed surface value
+     * @return true if compatible, false if the suggestion should be blocked
      */
-    private static ConfidenceTier checkTagCompatibility(Way way, String suggestedSurface,
-                                                         ConfidenceTier baseTier) {
+    public static boolean checkTagCompatibility(Way way, String suggestedSurface) {
         boolean isPavedSuggestion = HighwayConstants.PAVED_SURFACES.contains(suggestedSurface)
                 || "paved".equals(suggestedSurface);
         boolean isSoftUnpaved = SOFT_UNPAVED_SURFACES.contains(suggestedSurface);
         boolean isSmoothPaved = SMOOTH_PAVED_SURFACES.contains(suggestedSurface);
 
-        ConfidenceTier tier = baseTier;
-
         // --- tracktype checks ---
         String tracktype = way.get("tracktype");
         if (tracktype != null) {
             if ("grade1".equals(tracktype) && isSoftUnpaved) {
-                // grade1 = solid surface, incompatible with dirt/grass/mud
-                return ConfidenceTier.NONE;
+                return false;
             }
             if (!"grade1".equals(tracktype) && isPavedSuggestion) {
-                // grade2-5 = increasingly soft/natural, incompatible with pavement
-                return ConfidenceTier.NONE;
+                return false;
             }
         }
 
         // --- 4wd_only check ---
         if ("yes".equals(way.get("4wd_only")) && isPavedSuggestion) {
-            return ConfidenceTier.NONE;
+            return false;
         }
 
         // --- smoothness checks ---
         String smoothness = way.get("smoothness");
         if (smoothness != null) {
-            // excellent/good smoothness + soft unpaved = hard reject
             if (SMOOTH_PAVED.contains(smoothness) && isSoftUnpaved) {
-                return ConfidenceTier.NONE;
+                return false;
             }
-            // horrible+ smoothness + smooth pavement = hard reject
             if (ROUGH_SMOOTHNESS.contains(smoothness) && isSmoothPaved) {
-                return ConfidenceTier.NONE;
-            }
-            // bad/very_bad + paved = soft demote
-            if (("bad".equals(smoothness) || "very_bad".equals(smoothness)) && isPavedSuggestion) {
-                tier = tier.demote();
+                return false;
             }
         }
 
-        // --- highway=track without tracktype + paved = soft demote ---
-        if ("track".equals(way.get("highway")) && tracktype == null && isPavedSuggestion) {
-            tier = tier.demote();
-        }
-
-        return tier;
+        return true;
     }
 
     /**
      * Check if a suggested surface is a more specific value in the same category
      * as the existing generic surface.
+     *
+     * @param genericSurface  the existing generic surface (paved/unpaved)
+     * @param specificSurface the suggested specific surface
+     * @return true if the specific surface is in the same category
      */
-    private static boolean isSameCategory(String genericSurface, String specificSurface) {
+    public static boolean isSameCategory(String genericSurface, String specificSurface) {
         if ("paved".equals(genericSurface)) {
             return HighwayConstants.PAVED_SURFACES.contains(specificSurface);
         }
@@ -418,91 +274,5 @@ public class SurfaceCheck {
             return HighwayConstants.UNPAVED_SURFACES.contains(specificSurface);
         }
         return false;
-    }
-
-    /**
-     * Get the surface from connected roads at a node.
-     * Prefers same-name+highway roads when available, falling back to all roads.
-     * Returns a {@link NodeSurfaceInfo} distinguishing "no surface found" from
-     * "conflicting surfaces found".
-     */
-    private NodeSurfaceInfo getSurfaceFromConnections(Node node, Way excludeWay,
-                                                      String targetName, String targetHighway) {
-        // First pass: only same-name + same-highway connections
-        NodeSurfaceInfo sameRoad = collectSurfaces(node, excludeWay, targetName, targetHighway);
-        if (sameRoad.surface != null || sameRoad.hasConflict) {
-            return sameRoad;
-        }
-
-        // Fallback: all connected roads — endpointOfSameRoad is always false
-        // because these are not same-name+highway connections
-        NodeSurfaceInfo fallback = collectSurfaces(node, excludeWay, null, null);
-        return new NodeSurfaceInfo(fallback.surface, fallback.hasConflict, false);
-    }
-
-    /**
-     * Collect surface info from connected roads at a node.
-     * If filterName and filterHighway are non-null, only considers roads matching both,
-     * and tracks whether any matching road has the shared node at its endpoint.
-     */
-    private NodeSurfaceInfo collectSurfaces(Node node, Way excludeWay,
-                                            String filterName, String filterHighway) {
-        String foundSurface = null;
-        boolean anyEndpointConnection = false;
-
-        for (OsmPrimitive referrer : node.getReferrers()) {
-            if (referrer instanceof Way connectedWay && connectedWay != excludeWay) {
-                if (filterName != null
-                        && (!filterName.equals(connectedWay.get("name"))
-                            || !filterHighway.equals(connectedWay.get("highway")))) {
-                    continue;
-                }
-                String surface = getValidSurface(connectedWay);
-                if (surface != null) {
-                    if (foundSurface == null) {
-                        foundSurface = surface;
-                        anyEndpointConnection = isEndpointNode(node, connectedWay);
-                    } else if (!foundSurface.equals(surface)) {
-                        return new NodeSurfaceInfo(null, true, false);
-                    } else {
-                        anyEndpointConnection = anyEndpointConnection
-                                || isEndpointNode(node, connectedWay);
-                    }
-                }
-            }
-        }
-
-        return new NodeSurfaceInfo(foundSurface, false, anyEndpointConnection);
-    }
-
-    /**
-     * Check if a node is the first or last node of a way.
-     */
-    private static boolean isEndpointNode(Node node, Way way) {
-        List<Node> nodes = way.getNodes();
-        if (nodes.isEmpty()) {
-            return false;
-        }
-        return node.equals(nodes.get(0)) || node.equals(nodes.get(nodes.size() - 1));
-    }
-
-    /**
-     * Get the surface tag from a way if it's a valid, reviewed highway.
-     */
-    private String getValidSurface(Way way) {
-        // Must be a classified highway
-        String highway = way.get("highway");
-        if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
-            return null;
-        }
-
-        // Prefer roads that are reviewed (not tiger:reviewed=no)
-        // but accept any road with a surface tag since someone added it
-        String surface = way.get(SURFACE);
-        if (surface == null || surface.isEmpty()) {
-            return null;
-        }
-
-        return surface;
     }
 }

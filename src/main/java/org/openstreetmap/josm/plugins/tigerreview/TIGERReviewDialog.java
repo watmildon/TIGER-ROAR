@@ -459,12 +459,12 @@ public class TIGERReviewDialog extends ToggleDialog
 
         // --- Surface tab ---
 
-        if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS) return 0;
-        if (code == SurfaceTest.SURFACE_SUGGESTED_BOTH_ENDS_MIXED) return 1;
-        if (code == SurfaceTest.SURFACE_SUGGESTED_ONE_END) return 2;
-        if (code == SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS) return 3;
-        if (code == SurfaceTest.SURFACE_UPGRADE_BOTH_ENDS_MIXED) return 4;
-        if (code == SurfaceTest.SURFACE_UPGRADE_ONE_END) return 5;
+        if (code == SurfaceTest.SURFACE_CONNECTED_ROAD) return 0;
+        if (code == SurfaceTest.SURFACE_CONNECTED_ROAD_UPGRADE) return 1;
+        if (code == SurfaceTest.SURFACE_PARKING_AREA) return 2;
+        if (code == SurfaceTest.SURFACE_PARKING_AREA_UPGRADE) return 3;
+        if (code == SurfaceTest.SURFACE_LANES_PAVED) return 4;
+        if (code == SurfaceTest.SURFACE_LANES_CONFLICT) return 5;
         if (code == SurfaceTest.SURFACE_CONFLICT) return 6;
 
         // --- Speed Limit tab ---
