@@ -277,6 +277,32 @@ public final class StreetNameUtils {
     private static final Pattern FS_ROAD_PATTERN = Pattern.compile(
             "^Fs Road\\b", Pattern.CASE_INSENSITIVE);
 
+    // -- Ordinal number normalization (written-out → numeric) --
+
+    private static final Map<String, String> ORDINAL_WORDS = new HashMap<>();
+    static {
+        ORDINAL_WORDS.put("first", "1st");
+        ORDINAL_WORDS.put("second", "2nd");
+        ORDINAL_WORDS.put("third", "3rd");
+        ORDINAL_WORDS.put("fourth", "4th");
+        ORDINAL_WORDS.put("fifth", "5th");
+        ORDINAL_WORDS.put("sixth", "6th");
+        ORDINAL_WORDS.put("seventh", "7th");
+        ORDINAL_WORDS.put("eighth", "8th");
+        ORDINAL_WORDS.put("ninth", "9th");
+        ORDINAL_WORDS.put("tenth", "10th");
+        ORDINAL_WORDS.put("eleventh", "11th");
+        ORDINAL_WORDS.put("twelfth", "12th");
+        ORDINAL_WORDS.put("thirteenth", "13th");
+        ORDINAL_WORDS.put("fourteenth", "14th");
+        ORDINAL_WORDS.put("fifteenth", "15th");
+        ORDINAL_WORDS.put("sixteenth", "16th");
+        ORDINAL_WORDS.put("seventeenth", "17th");
+        ORDINAL_WORDS.put("eighteenth", "18th");
+        ORDINAL_WORDS.put("nineteenth", "19th");
+        ORDINAL_WORDS.put("twentieth", "20th");
+    }
+
     // -- Directional full words (for detecting directional-only differences) --
 
     private static final Set<String> DIRECTIONAL_WORDS = Set.of(
@@ -345,6 +371,15 @@ public final class StreetNameUtils {
         String typeClean = typeLower.endsWith(".") ? typeLower.substring(0, typeLower.length() - 1) : typeLower;
         if (STREET_TYPE_EXPAND.containsKey(typeClean)) {
             words[typeIndex] = STREET_TYPE_EXPAND.get(typeClean);
+        }
+
+        // Normalize written-out ordinals to numeric form (e.g., "First" → "1st").
+        // NAD/address data sometimes uses written-out ordinals while OSM uses numeric.
+        for (int i = 0; i < words.length; i++) {
+            String ordinal = ORDINAL_WORDS.get(words[i].toLowerCase());
+            if (ordinal != null) {
+                words[i] = ordinal;
+            }
         }
 
         // Normalize foreign articles/prepositions to lowercase (interior words only).

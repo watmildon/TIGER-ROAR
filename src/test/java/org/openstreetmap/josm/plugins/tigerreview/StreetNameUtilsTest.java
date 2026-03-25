@@ -80,6 +80,23 @@ class StreetNameUtilsTest {
     }
 
     @Test
+    void testExpandOrdinals() {
+        assertEquals("1st Street", StreetNameUtils.expand("First Street"));
+        assertEquals("1st Street", StreetNameUtils.expand("First St"));
+        assertEquals("2nd Avenue", StreetNameUtils.expand("Second Ave"));
+        assertEquals("3rd Boulevard", StreetNameUtils.expand("Third Blvd"));
+        assertEquals("10th Street", StreetNameUtils.expand("Tenth St"));
+        assertEquals("20th Avenue", StreetNameUtils.expand("Twentieth Ave"));
+    }
+
+    @Test
+    void testExpandOrdinalsAlreadyNumeric() {
+        // Already numeric — no change to the ordinal
+        assertEquals("1st Street", StreetNameUtils.expand("1st St"));
+        assertEquals("5th Avenue", StreetNameUtils.expand("5th Ave"));
+    }
+
+    @Test
     void testExpandNullAndEmpty() {
         assertNull(StreetNameUtils.expand(null));
         assertEquals("", StreetNameUtils.expand(""));
@@ -132,6 +149,15 @@ class StreetNameUtilsTest {
         assertFalse(StreetNameUtils.namesMatch(null, "Main Street"));
         assertFalse(StreetNameUtils.namesMatch("Main Street", null));
         assertFalse(StreetNameUtils.namesMatch(null, null));
+    }
+
+    @Test
+    void testNamesMatchOrdinals() {
+        assertTrue(StreetNameUtils.namesMatch("1st Street", "First Street"));
+        assertTrue(StreetNameUtils.namesMatch("First St", "1st Street"));
+        assertTrue(StreetNameUtils.namesMatch("2nd Ave", "Second Avenue"));
+        assertTrue(StreetNameUtils.namesMatch("N 3rd St", "North Third Street"));
+        assertFalse(StreetNameUtils.namesMatch("1st Street", "2nd Street"));
     }
 
     @Test
