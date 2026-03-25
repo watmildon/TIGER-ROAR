@@ -81,7 +81,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     public static final double DEFAULT_ADDRESS_MAX_DISTANCE = 50.0;
 
     /** Default minimum average node version for alignment verification */
-    public static final double DEFAULT_NODE_MIN_AVG_VERSION = 1.5;
+    public static final double DEFAULT_NODE_MIN_AVG_VERSION = 2.5;
 
     /** Default minimum percentage of nodes edited for alignment verification (0.0-1.0) */
     public static final double DEFAULT_NODE_MIN_PERCENTAGE_EDITED = 0.8;
