@@ -88,6 +88,15 @@ public class TIGERReviewTest extends Test {
     /** Name verified because the current user modified the name tag */
     public static final int TIGER_NAME_VERIFIED_USER_EDIT = CODE_PREFIX + 20;
 
+    /** NAD addresses suggest adding a directional prefix/suffix to the name */
+    public static final int TIGER_NAD_DIRECTIONAL_SUGGESTION = CODE_PREFIX + 21;
+
+    /** OSM addr:street data suggests adding a directional prefix/suffix to the name */
+    public static final int TIGER_ADDRESS_DIRECTIONAL_SUGGESTION = CODE_PREFIX + 22;
+
+    /** Both NAD and OSM addr:street agree on a directional prefix/suffix addition */
+    public static final int TIGER_COMBINED_DIRECTIONAL_SUGGESTION = CODE_PREFIX + 23;
+
     /** Accepted values for tiger:reviewed (no error triggered).
      *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
@@ -275,9 +284,30 @@ public class TIGERReviewTest extends Test {
                         .fix(result.getFixSupplier())
                         .build();
             }
+            if (code == TIGER_COMBINED_DIRECTIONAL_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD and nearby addresses agree on directional upgrade [{0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
             if (code == TIGER_NAD_NAME_SUGGESTION) {
                 return TestError.builder(this, Severity.OTHER, code)
                         .message(GROUP_MESSAGE, marktr("NAD suggests different name [NAD: {0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            if (code == TIGER_NAD_DIRECTIONAL_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD suggests directional upgrade [NAD: {0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            if (code == TIGER_ADDRESS_DIRECTIONAL_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("Nearby addresses suggest directional upgrade [{0}]"), message)
                         .primitives(way)
                         .fix(result.getFixSupplier())
                         .build();

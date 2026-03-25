@@ -210,11 +210,11 @@ public class AddressCheck {
                 nearestRoad.put(addr, nearest.way);
 
                 // Check if addr:street matches either of the 2 nearest roads
-                // (using pre-expanded names for fast comparison)
-                if (addr.expandedStreetName.equalsIgnoreCase(nearest.expandedName)) {
+                // (using pre-expanded names, with apostrophe tolerance)
+                if (StreetNameUtils.expandedNamesMatch(addr.expandedStreetName, nearest.expandedName)) {
                     assignedAddresses.add(addr);
                 } else if (secondNearest != null
-                        && addr.expandedStreetName.equalsIgnoreCase(secondNearest.expandedName)) {
+                        && StreetNameUtils.expandedNamesMatch(addr.expandedStreetName, secondNearest.expandedName)) {
                     assignedAddresses.add(addr);
                 }
             }
@@ -349,8 +349,8 @@ public class AddressCheck {
         CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
         for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (expandedName.equalsIgnoreCase(addr.expandedStreetName)) {
-                continue; // skip matches (exact or abbreviation-expanded)
+            if (StreetNameUtils.expandedNamesMatch(expandedName, addr.expandedStreetName)) {
+                continue; // skip matches (exact, abbreviation-expanded, or apostrophe-stripped)
             }
 
             if (assignedAddresses.contains(addr)) {
@@ -425,7 +425,7 @@ public class AddressCheck {
         CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
         for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (expandedName.equalsIgnoreCase(addr.expandedStreetName)) {
+            if (StreetNameUtils.expandedNamesMatch(expandedName, addr.expandedStreetName)) {
                 double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
                 if (dist <= scaledMaxDistance) {
                     return true;

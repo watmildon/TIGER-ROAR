@@ -417,9 +417,11 @@ public class TIGERReviewDialog extends ToggleDialog
      *   3  Name upgrade (was name-only, alignment now confirmed)
      *   4  Name verified, alignment needs review (fix sets tiger:reviewed=name)
      *   5  Invalid tiger:reviewed value (needs manual attention)
-     *   6  Combined name suggestion (NAD + addresses agree, informational)
-     *   7  Individual name suggestions (informational, no fix)
-     *   8  Alignment verified, name not corroborated (fix sets tiger:reviewed=aerial)
+     *   6  Combined directional upgrade (NAD + addresses agree, high confidence)
+     *   7  Individual directional upgrades (prefix/suffix addition)
+     *   8  Combined name suggestion (NAD + addresses agree, informational)
+     *   9  Individual name suggestions (informational)
+     *  10  Alignment verified, name not corroborated (fix sets tiger:reviewed=aerial)
      *
      * Surface tab ordering:
      *   0-5  Surface suggestions by confidence (high to low)
@@ -452,10 +454,13 @@ public class TIGERReviewDialog extends ToggleDialog
         }
         if (code == TIGERReviewTest.TIGER_NAME_UPGRADE) return 3;
         if (code == TIGERReviewTest.TIGER_REVIEWED_INVALID_VALUE) return 5;
-        if (code == TIGERReviewTest.TIGER_COMBINED_NAME_SUGGESTION) return 6;
+        if (code == TIGERReviewTest.TIGER_COMBINED_DIRECTIONAL_SUGGESTION) return 6;
+        if (code == TIGERReviewTest.TIGER_NAD_DIRECTIONAL_SUGGESTION
+                || code == TIGERReviewTest.TIGER_ADDRESS_DIRECTIONAL_SUGGESTION) return 7;
+        if (code == TIGERReviewTest.TIGER_COMBINED_NAME_SUGGESTION) return 8;
         if (code == TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION
-                || code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION) return 7;
-        if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 8;
+                || code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION) return 9;
+        if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 10;
 
         // --- Surface tab ---
 

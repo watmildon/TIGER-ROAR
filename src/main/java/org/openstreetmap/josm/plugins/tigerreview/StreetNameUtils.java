@@ -277,6 +277,26 @@ public final class StreetNameUtils {
     private static final Pattern FS_ROAD_PATTERN = Pattern.compile(
             "^Fs Road\\b", Pattern.CASE_INSENSITIVE);
 
+    // -- Directional full words (for detecting directional-only differences) --
+
+    private static final Set<String> DIRECTIONAL_WORDS = Set.of(
+            "north", "south", "east", "west",
+            "northeast", "northwest", "southeast", "southwest");
+
+    /**
+     * Foreign language articles and prepositions that should be lowercased in
+     * street names during expansion. NAD and address data commonly capitalizes
+     * these (e.g., "De Las" instead of "de las").
+     *
+     * <p>Sourced from JOSM validator rules (NameTagCapitalization.validator.mapcss).
+     */
+    private static final Set<String> LOWERCASE_ARTICLES = Set.of(
+            // Spanish/Portuguese/French/Italian
+            "del", "de", "di", "du", "la", "las", "los", "el",
+            // English prepositions and conjunctions
+            "of", "on", "for", "a", "an", "the", "at", "to", "in", "via", "by",
+            "or", "and", "but");
+
     /**
      * Expand all abbreviations in a street name.
      *
@@ -327,6 +347,16 @@ public final class StreetNameUtils {
             words[typeIndex] = STREET_TYPE_EXPAND.get(typeClean);
         }
 
+        // Normalize foreign articles/prepositions to lowercase (interior words only).
+        // NAD data commonly capitalizes these: "Casa Del Mar" → "Casa del Mar".
+        // Skip the first word (it's the start of the name and may legitimately be capitalized,
+        // e.g., "La Jolla Boulevard" should keep "La" capitalized).
+        for (int i = 1; i < words.length; i++) {
+            if (LOWERCASE_ARTICLES.contains(words[i].toLowerCase())) {
+                words[i] = words[i].toLowerCase();
+            }
+        }
+
         String result = String.join(" ", words);
 
         // Expand saint names: "St Catherine" → "Saint Catherine"
@@ -347,14 +377,54 @@ public final class StreetNameUtils {
     }
 
     /**
+     * Strip apostrophes from a string. Used to normalize names for comparison,
+     * since NAD/address data commonly strips possessive apostrophes
+     * (e.g., "Mary's Place" stored as "Marys Place").
+     *
+     * @param name The name to strip
+     * @return The name with all apostrophes and right single quotation marks removed
+     */
+    public static String stripApostrophes(String name) {
+        if (name == null) {
+            return null;
+        }
+        // Strip ASCII apostrophe and Unicode right single quotation mark (')
+        return name.replace("'", "").replace("\u2019", "");
+    }
+
+    /**
+     * Check if two expanded street names match, allowing for apostrophe differences.
+     *
+     * <p>First tries exact case-insensitive match, then tries again after stripping
+     * apostrophes from both sides. This handles NAD/address data that commonly
+     * strips possessive apostrophes (e.g., "Mary's Place" vs "Marys Place").
+     *
+     * @param expandedA First expanded street name
+     * @param expandedB Second expanded street name
+     * @return true if the names match (with or without apostrophes)
+     */
+    public static boolean expandedNamesMatch(String expandedA, String expandedB) {
+        if (expandedA == null || expandedB == null) {
+            return false;
+        }
+        if (expandedA.equalsIgnoreCase(expandedB)) {
+            return true;
+        }
+        // Try again with apostrophes stripped
+        return stripApostrophes(expandedA).equalsIgnoreCase(stripApostrophes(expandedB));
+    }
+
+    /**
      * Check if two street names match, considering abbreviation expansion.
      *
      * <p>Returns true if either the original or expanded forms of the names match
-     * (case-insensitive). This handles cases like:
+     * (case-insensitive). Also tolerates apostrophe differences (e.g.,
+     * "Mary's Place" matches "Marys Place"). This handles cases like:
      * <ul>
      *   <li>"S Maryland Ave" matching "South Maryland Avenue"</li>
      *   <li>"St. Catherine St" matching "Saint Catherine Street"</li>
      *   <li>"CR 5" matching "County Road 5"</li>
+     *   <li>"Mary's Place" matching "Marys Place"</li>
      * </ul>
      *
      * @param a First street name
@@ -371,10 +441,68 @@ public final class StreetNameUtils {
             return true;
         }
 
-        // Expand both and compare
-        String expandedA = expand(a);
-        String expandedB = expand(b);
+        // Expand both and compare (with apostrophe tolerance)
+        return expandedNamesMatch(expand(a), expand(b));
+    }
 
-        return expandedA.equalsIgnoreCase(expandedB);
+    /**
+     * Check if the only difference between two expanded street names is a directional
+     * prefix or suffix (North, South, East, West, etc.). Used to categorize name
+     * suggestions as "directional upgrades" for easier review.
+     *
+     * <p>Examples:
+     * <ul>
+     *   <li>"Mike Avenue" vs "North Mike Avenue" → true (prefix added)</li>
+     *   <li>"Stan Street" vs "Stan Street South" → true (suffix added)</li>
+     *   <li>"Main Street" vs "North Main Avenue" → false (street type also differs)</li>
+     * </ul>
+     *
+     * @param expandedOsmName  The expanded current OSM name
+     * @param expandedSuggested The expanded suggested name
+     * @return true if the only difference is a directional prefix and/or suffix
+     */
+    public static boolean isDirectionalUpgrade(String expandedOsmName, String expandedSuggested) {
+        if (expandedOsmName == null || expandedSuggested == null) {
+            return false;
+        }
+
+        String[] osmWords = expandedOsmName.split("\\s+");
+        String[] sugWords = expandedSuggested.split("\\s+");
+
+        // Suggested name must have more words (the directional was added)
+        if (sugWords.length <= osmWords.length) {
+            return false;
+        }
+
+        // Strip directional prefix from suggested if present
+        int sugStart = 0;
+        if (DIRECTIONAL_WORDS.contains(sugWords[0].toLowerCase())) {
+            sugStart = 1;
+        }
+
+        // Strip directional suffix from suggested if present
+        int sugEnd = sugWords.length;
+        if (DIRECTIONAL_WORDS.contains(sugWords[sugEnd - 1].toLowerCase())) {
+            sugEnd--;
+        }
+
+        // Must have stripped at least one directional
+        if (sugStart == 0 && sugEnd == sugWords.length) {
+            return false;
+        }
+
+        // The remaining core of the suggested name must match the OSM name exactly
+        int sugCoreLen = sugEnd - sugStart;
+        if (sugCoreLen != osmWords.length) {
+            return false;
+        }
+
+        for (int i = 0; i < osmWords.length; i++) {
+            if (!osmWords[i].equalsIgnoreCase(sugWords[sugStart + i])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

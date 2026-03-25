@@ -66,7 +66,7 @@ way=827217877 code=19939010 fix=REMOVE_TAG msg="name: nearby addr:street, alignm
 way=827217879 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
 way=827217880 code=10496673 fix=none msg="Connected same-name roads have conflicting surfaces"
 way=827217880 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="all nodes edited"
-way=827217880 code=19939016 fix=SUGGEST_NAME msg="East Adams Street"
+way=827217880 code=19939021 fix=SUGGEST_NAME msg="East Adams Street"
 way=827217882 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
 way=827217883 code=19939010 fix=REMOVE_TAG msg="name: nearby addr:street, alignment: all nodes edited"
 way=827217885 code=19939005 fix=REMOVE_TAG msg="all nodes edited"

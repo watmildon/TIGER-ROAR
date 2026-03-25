@@ -571,27 +571,59 @@ public final class TIGERReviewAnalyzer {
     /**
      * Add name suggestion results. If both OSM addresses and NAD agree on the same
      * suggested name, emit a single combined result; otherwise emit them separately.
+     * Suggestions that only add a directional prefix/suffix are categorized separately
+     * as "directional upgrades" for easier batch review.
      */
     private static void addNameSuggestions(Way way, List<ReviewResult> results,
             String addressSuggestedName, String nadSuggestedName) {
+        String osmName = way.get("name");
+        String expandedOsm = StreetNameUtils.expand(osmName);
+
         if (addressSuggestedName != null && nadSuggestedName != null
                 && addressSuggestedName.equalsIgnoreCase(nadSuggestedName)) {
-            results.add(new ReviewResult(way, TIGERReviewTest.TIGER_COMBINED_NAME_SUGGESTION,
-                    addressSuggestedName,
-                    tr("NAD and nearby addresses agree on different name"),
-                    FixAction.SUGGEST_NAME, false, addressSuggestedName));
-        } else {
-            if (addressSuggestedName != null) {
-                results.add(new ReviewResult(way, TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION,
+            boolean directional = StreetNameUtils.isDirectionalUpgrade(
+                    expandedOsm, StreetNameUtils.expand(addressSuggestedName));
+            if (directional) {
+                results.add(new ReviewResult(way, TIGERReviewTest.TIGER_COMBINED_DIRECTIONAL_SUGGESTION,
                         addressSuggestedName,
-                        tr("Nearby addresses suggest different name"),
+                        tr("NAD and nearby addresses agree on directional upgrade"),
+                        FixAction.SUGGEST_NAME, false, addressSuggestedName));
+            } else {
+                results.add(new ReviewResult(way, TIGERReviewTest.TIGER_COMBINED_NAME_SUGGESTION,
+                        addressSuggestedName,
+                        tr("NAD and nearby addresses agree on different name"),
                         FixAction.SUGGEST_NAME, false, addressSuggestedName));
             }
+        } else {
+            if (addressSuggestedName != null) {
+                boolean directional = StreetNameUtils.isDirectionalUpgrade(
+                        expandedOsm, StreetNameUtils.expand(addressSuggestedName));
+                if (directional) {
+                    results.add(new ReviewResult(way, TIGERReviewTest.TIGER_ADDRESS_DIRECTIONAL_SUGGESTION,
+                            addressSuggestedName,
+                            tr("Nearby addresses suggest directional upgrade"),
+                            FixAction.SUGGEST_NAME, false, addressSuggestedName));
+                } else {
+                    results.add(new ReviewResult(way, TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION,
+                            addressSuggestedName,
+                            tr("Nearby addresses suggest different name"),
+                            FixAction.SUGGEST_NAME, false, addressSuggestedName));
+                }
+            }
             if (nadSuggestedName != null) {
-                results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION,
-                        nadSuggestedName,
-                        tr("NAD suggests different name"),
-                        FixAction.SUGGEST_NAME, false, nadSuggestedName));
+                boolean directional = StreetNameUtils.isDirectionalUpgrade(
+                        expandedOsm, StreetNameUtils.expand(nadSuggestedName));
+                if (directional) {
+                    results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_DIRECTIONAL_SUGGESTION,
+                            nadSuggestedName,
+                            tr("NAD suggests directional upgrade"),
+                            FixAction.SUGGEST_NAME, false, nadSuggestedName));
+                } else {
+                    results.add(new ReviewResult(way, TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION,
+                            nadSuggestedName,
+                            tr("NAD suggests different name"),
+                            FixAction.SUGGEST_NAME, false, nadSuggestedName));
+                }
             }
         }
     }
@@ -754,6 +786,12 @@ public final class TIGERReviewAnalyzer {
             return tr("NAD suggests different name");
         } else if (code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION) {
             return tr("Nearby addresses suggest different name");
+        } else if (code == TIGERReviewTest.TIGER_COMBINED_DIRECTIONAL_SUGGESTION) {
+            return tr("NAD and nearby addresses agree on directional upgrade");
+        } else if (code == TIGERReviewTest.TIGER_NAD_DIRECTIONAL_SUGGESTION) {
+            return tr("NAD suggests directional upgrade");
+        } else if (code == TIGERReviewTest.TIGER_ADDRESS_DIRECTIONAL_SUGGESTION) {
+            return tr("Nearby addresses suggest directional upgrade");
         }
         return null;
     }

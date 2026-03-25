@@ -282,11 +282,11 @@ public class NadDataCache {
 
                 nearestRoad.put(addr, nearest.way);
 
-                // Check if street name matches either of the 2 nearest roads
-                if (addr.expandedStreetName().equalsIgnoreCase(nearest.expandedName())) {
+                // Check if street name matches either of the 2 nearest roads (with apostrophe tolerance)
+                if (StreetNameUtils.expandedNamesMatch(addr.expandedStreetName(), nearest.expandedName())) {
                     assignedAddresses.add(addr);
                 } else if (secondNearest != null
-                        && addr.expandedStreetName().equalsIgnoreCase(secondNearest.expandedName())) {
+                        && StreetNameUtils.expandedNamesMatch(addr.expandedStreetName(), secondNearest.expandedName())) {
                     assignedAddresses.add(addr);
                 }
             }
@@ -406,7 +406,7 @@ public class NadDataCache {
         CellRange range = CellRange.of(en1, en2, maxDistance);
 
         for (NadAddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
-            if (expandedName.equalsIgnoreCase(addr.expandedStreetName())) {
+            if (StreetNameUtils.expandedNamesMatch(expandedName, addr.expandedStreetName())) {
                 double dist = SpatialUtils.distanceToSegment(addr.location(), en1, en2);
                 if (dist <= maxDistance) {
                     return true;
@@ -508,8 +508,8 @@ public class NadDataCache {
                 continue;
             }
 
-            // Skip name matches (using pre-expanded names)
-            if (expandedOsmName.equalsIgnoreCase(addr.expandedStreetName())) {
+            // Skip name matches (using pre-expanded names, with apostrophe tolerance)
+            if (StreetNameUtils.expandedNamesMatch(expandedOsmName, addr.expandedStreetName())) {
                 continue;
             }
 
