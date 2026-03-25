@@ -276,6 +276,22 @@ class SurfaceAnalyzerTest {
                 "Crossing with crossing:raised=yes on node should be excluded");
     }
 
+    @Test
+    void testLanesBelowThresholdNoSuggestion() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("30"),
+                "lanes=2 (below threshold of 3) should not suggest paved");
+    }
+
+    // --- Bridge exclusion ---
+
+    @Test
+    void testBridgeBlocksPropagation() {
+        Map<String, SurfaceSuggestion> results = buildResultMap(surfaceTestData);
+        assertFalse(results.containsKey("31"),
+                "man_made=bridge should block surface propagation from connected road");
+    }
+
     // --- Priority ---
 
     @Test

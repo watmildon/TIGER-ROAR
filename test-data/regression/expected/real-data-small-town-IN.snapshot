@@ -1,7 +1,6 @@
 # TIGER-ROAR Result Snapshot
-# Total warnings: 240
+# Total warnings: 239
 
-way=17444741 code=10496674 fix=FIX msg="Suggest surface=paved (has lanes tag)"
 way=17444741 code=19939005 fix=REMOVE_TAG msg="90+% of nodes edited"
 way=17444778 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
 way=17444779 code=19939005 fix=REMOVE_TAG msg="all nodes edited"

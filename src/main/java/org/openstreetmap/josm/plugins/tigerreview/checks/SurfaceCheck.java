@@ -117,6 +117,16 @@ public class SurfaceCheck {
             return SurfaceResult.none();
         }
 
+        // Only lanes >= 3 is high-confidence evidence of paved surface;
+        // lower lane counts are commonly used even on unpainted roads
+        try {
+            if (Integer.parseInt(lanes) < 3) {
+                return SurfaceResult.none();
+            }
+        } catch (NumberFormatException e) {
+            return SurfaceResult.none();
+        }
+
         String existingSurface = way.get(SURFACE);
 
         // No surface -> suggest paved

@@ -175,17 +175,17 @@
     <tag k='surface' v='gravel' />
   </way>
 
-  <!-- Test 8: lanes + no surface, suggest paved -->
+  <!-- Test 8: lanes >= 3 + no surface, suggest paved -->
   <node id='-200' action='modify' visible='true' lat='47.683' lon='-122.100' />
   <node id='-201' action='modify' visible='true' lat='47.683' lon='-122.101' />
   <way id='-2001' action='modify' visible='true'>
     <nd ref='-200' />
     <nd ref='-201' />
     <tag k='_test_id' v='8' />
-    <tag k='_test_note' v='lanes tag, suggest surface=paved' />
+    <tag k='_test_note' v='lanes >= 3, suggest surface=paved' />
     <tag k='highway' v='primary' />
     <tag k='name' v='Unique8' />
-    <tag k='lanes' v='2' />
+    <tag k='lanes' v='3' />
   </way>
 
   <!-- Test 9: lanes + surface=unpaved, conflict -->
@@ -195,10 +195,10 @@
     <nd ref='-210' />
     <nd ref='-211' />
     <tag k='_test_id' v='9' />
-    <tag k='_test_note' v='lanes + unpaved, conflict' />
+    <tag k='_test_note' v='lanes >= 3 + unpaved, conflict' />
     <tag k='highway' v='secondary' />
     <tag k='name' v='Unique9' />
-    <tag k='lanes' v='2' />
+    <tag k='lanes' v='3' />
     <tag k='surface' v='unpaved' />
   </way>
 
@@ -413,7 +413,7 @@
     <tag k='_test_note' v='Qualifies for Rule 1 and Rule 2, should prefer Rule 1' />
     <tag k='highway' v='tertiary' />
     <tag k='name' v='Priority Street' />
-    <tag k='lanes' v='2' />
+    <tag k='lanes' v='3' />
   </way>
 
   <!-- Test 20: Basic crossing inference, footway crossing with surface=asphalt -->
@@ -714,6 +714,40 @@
     <tag k='highway' v='footway' />
     <tag k='footway' v='crossing' />
     <tag k='surface' v='concrete' />
+  </way>
+
+  <!-- Test 30: lanes=2 (below threshold), no suggestion -->
+  <node id='-700' action='modify' visible='true' lat='47.640' lon='-122.100' />
+  <node id='-701' action='modify' visible='true' lat='47.640' lon='-122.101' />
+  <way id='-7000' action='modify' visible='true'>
+    <nd ref='-700' />
+    <nd ref='-701' />
+    <tag k='_test_id' v='30' />
+    <tag k='_test_note' v='lanes=2 below threshold, no suggestion' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Unique30' />
+    <tag k='lanes' v='2' />
+  </way>
+
+  <!-- Test 31: man_made=bridge blocks surface propagation -->
+  <node id='-710' action='modify' visible='true' lat='47.639' lon='-122.100' />
+  <node id='-711' action='modify' visible='true' lat='47.639' lon='-122.101' />
+  <node id='-712' action='modify' visible='true' lat='47.639' lon='-122.102' />
+  <way id='-7100' action='modify' visible='true'>
+    <nd ref='-710' />
+    <nd ref='-711' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Bridge Road' />
+    <tag k='surface' v='asphalt' />
+  </way>
+  <way id='-7101' action='modify' visible='true'>
+    <nd ref='-711' />
+    <nd ref='-712' />
+    <tag k='_test_id' v='31' />
+    <tag k='_test_note' v='man_made=bridge blocks surface propagation from connected road' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Bridge Road' />
+    <tag k='man_made' v='bridge' />
   </way>
 
 </osm>

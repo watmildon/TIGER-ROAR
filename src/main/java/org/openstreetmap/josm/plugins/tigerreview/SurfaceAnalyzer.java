@@ -104,6 +104,15 @@ public final class SurfaceAnalyzer {
     }
 
     /**
+     * Check if a way is a bridge structure ({@code man_made=bridge}).
+     * Bridge structures commonly have a different surface material than
+     * the roads they carry, so surface should not propagate across them.
+     */
+    private static boolean isBridgeStructure(Way way) {
+        return "bridge".equals(way.get("man_made"));
+    }
+
+    /**
      * Check if a way needs a surface suggestion (no surface, or generic surface).
      */
     private static boolean needsSurface(Way way) {
@@ -159,7 +168,7 @@ public final class SurfaceAnalyzer {
     private static SurfaceSuggestion checkImmediateNeighbors(Way way, SurfaceCheck surfaceCheck) {
         String name = way.get("name");
         String highway = way.get("highway");
-        if (name == null || highway == null) {
+        if (name == null || highway == null || isBridgeStructure(way)) {
             return null;
         }
 
@@ -169,7 +178,7 @@ public final class SurfaceAnalyzer {
         for (Node node : way.getNodes()) {
             for (OsmPrimitive referrer : node.getReferrers()) {
                 if (!(referrer instanceof Way neighbor) || neighbor == way
-                        || !neighbor.isUsable()) {
+                        || !neighbor.isUsable() || isBridgeStructure(neighbor)) {
                     continue;
                 }
                 if (!name.equals(neighbor.get("name"))
@@ -310,10 +319,11 @@ public final class SurfaceAnalyzer {
      */
     private static void analyzeConnectedRoads(DataSet dataSet, SurfaceCheck surfaceCheck,
                                                Map<Way, SurfaceSuggestion> results) {
-        // Collect all eligible named highway ways
+        // Collect all eligible named highway ways (excluding bridge structures)
         Set<Way> allEligible = new HashSet<>();
         for (Way way : dataSet.getWays()) {
-            if (isEligible(way) && way.get("name") != null && way.get("highway") != null) {
+            if (isEligible(way) && !isBridgeStructure(way)
+                    && way.get("name") != null && way.get("highway") != null) {
                 allEligible.add(way);
             }
         }
