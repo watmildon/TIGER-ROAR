@@ -25,3 +25,33 @@ tasks.withType(JavaExec).configureEach {
 repositories {
     mavenCentral()
 }
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+}
+
+test {
+    useJUnitPlatform {
+        if (!project.hasProperty('includeBenchmarks')) {
+            excludeTags 'benchmark'
+        }
+    }
+    jvmArgs += [
+        '--add-exports=java.base/sun.security.action=ALL-UNNAMED',
+        '--add-exports=java.desktop/com.sun.imageio.plugins.jpeg=ALL-UNNAMED',
+        '--add-exports=java.desktop/com.sun.imageio.spi=ALL-UNNAMED'
+    ]
+    maxHeapSize = '1g'
+    testLogging {
+        showStandardStreams = true
+    }
+}
+
+sourceSets {
+    test {
+        resources {
+            srcDir 'test-data'
+            srcDir 'scratch'
+        }
+    }
+}

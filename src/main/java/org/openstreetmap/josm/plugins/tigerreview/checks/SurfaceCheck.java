@@ -1,50 +1,79 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.tigerreview.checks;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.openstreetmap.josm.data.osm.Node;
-import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
+import org.openstreetmap.josm.tools.Geometry;
 
 /**
- * Checks if a road's surface can be inferred from connected roads.
+ * Utility methods for surface inference checks.
  *
- * A surface is suggested if connected roads at both ends have the same surface tag.
- * This provides strong evidence that the road likely has the same surface.
+ * Three rules:
+ * <ol>
+ *   <li>Connected same-name/highway propagation (graph-based, driven by SurfaceAnalyzer)</li>
+ *   <li>{@code lanes} tag implies {@code surface=paved}</li>
+ *   <li>Service roads inside parking areas inherit the area's surface</li>
+ * </ol>
+ *
+ * Tag compatibility vetoes apply to all rules.
  */
 public class SurfaceCheck {
 
     private static final String SURFACE = "surface";
 
+    /** Smoothness values that imply a well-maintained paved surface */
+    private static final Set<String> SMOOTH_PAVED = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("excellent", "good")));
+
+    /** Smoothness values that imply an extremely rough surface, incompatible with smooth pavement */
+    private static final Set<String> ROUGH_SMOOTHNESS = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("horrible", "very_horrible", "impassable")));
+
+    /** Smooth paved surface types that conflict with very rough smoothness */
+    private static final Set<String> SMOOTH_PAVED_SURFACES = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("asphalt", "chipseal", "concrete",
+                    "concrete:lanes", "concrete:plates")));
+
+    /** Soft/natural unpaved surfaces incompatible with good smoothness */
+    private static final Set<String> SOFT_UNPAVED_SURFACES = Collections.unmodifiableSet(
+            new HashSet<>(Arrays.asList("dirt", "earth", "grass", "mud", "sand",
+                    "ground", "woodchips")));
+
     /**
-     * Result of surface check with suggested value.
+     * Result of a surface check.
      */
     public static class SurfaceResult {
         private final String suggestedSurface;
-        private final boolean bothEnds;
         private final boolean conflicting;
         private final boolean upgrade;
 
-        public SurfaceResult(String suggestedSurface, boolean bothEnds) {
-            this(suggestedSurface, bothEnds, false, false);
+        public SurfaceResult(String suggestedSurface) {
+            this(suggestedSurface, false, false);
         }
 
-        private SurfaceResult(String suggestedSurface, boolean bothEnds,
-                              boolean conflicting, boolean upgrade) {
+        private SurfaceResult(String suggestedSurface, boolean conflicting, boolean upgrade) {
             this.suggestedSurface = suggestedSurface;
-            this.bothEnds = bothEnds;
             this.conflicting = conflicting;
             this.upgrade = upgrade;
         }
 
-        static SurfaceResult conflict() {
-            return new SurfaceResult(null, false, true, false);
+        public static SurfaceResult conflict() {
+            return new SurfaceResult(null, true, false);
         }
 
-        static SurfaceResult upgrade(String surface, boolean bothEnds) {
-            return new SurfaceResult(surface, bothEnds, false, true);
+        public static SurfaceResult upgrade(String surface) {
+            return new SurfaceResult(surface, false, true);
+        }
+
+        public static SurfaceResult none() {
+            return new SurfaceResult(null, false, false);
         }
 
         /**
@@ -55,14 +84,7 @@ public class SurfaceCheck {
         }
 
         /**
-         * @return true if the suggestion comes from roads at both ends
-         */
-        public boolean isBothEnds() {
-            return bothEnds;
-        }
-
-        /**
-         * @return true if connected roads have conflicting surfaces (no auto-fix)
+         * @return true if incompatible surfaces were found (no auto-fix)
          */
         public boolean isConflicting() {
             return conflicting;
@@ -84,102 +106,177 @@ public class SurfaceCheck {
     }
 
     /**
-     * Surface info gathered at a single endpoint node.
-     */
-    private static class NodeSurfaceInfo {
-        /** Consistent surface value, or null if none or conflicting */
-        final String surface;
-        /** True if connected roads at this node have conflicting surfaces */
-        final boolean hasConflict;
-
-        NodeSurfaceInfo(String surface, boolean hasConflict) {
-            this.surface = surface;
-            this.hasConflict = hasConflict;
-        }
-    }
-
-    /**
-     * Check if a surface can be inferred from connected roads.
+     * Check Rule 2: lanes tag implies surface=paved.
      *
-     * @param way The way to check (should not already have a surface tag)
-     * @return SurfaceResult with suggested surface if found
+     * @param way the way to check
+     * @return a result suggesting paved, a conflict, or none
      */
-    public SurfaceResult checkSurface(Way way) {
+    public SurfaceResult checkLanesTag(Way way) {
+        String lanes = way.get("lanes");
+        if (lanes == null) {
+            return SurfaceResult.none();
+        }
+
+        // Only lanes >= 3 is high-confidence evidence of paved surface;
+        // lower lane counts are commonly used even on unpainted roads
+        try {
+            if (Integer.parseInt(lanes) < 3) {
+                return SurfaceResult.none();
+            }
+        } catch (NumberFormatException e) {
+            return SurfaceResult.none();
+        }
+
         String existingSurface = way.get(SURFACE);
 
-        // Already has a specific surface — nothing to suggest
-        if (existingSurface != null
-                && !"paved".equals(existingSurface)
-                && !"unpaved".equals(existingSurface)) {
-            return new SurfaceResult(null, false);
-        }
-
-        List<Node> nodes = way.getNodes();
-        if (nodes.isEmpty()) {
-            return new SurfaceResult(null, false);
-        }
-
-        Node firstNode = nodes.get(0);
-        Node lastNode = nodes.get(nodes.size() - 1);
-
-        String name = way.get("name");
-        String highway = way.get("highway");
-
-        NodeSurfaceInfo infoAtFirst = getSurfaceFromConnections(firstNode, way, name, highway);
-        NodeSurfaceInfo infoAtLast = getSurfaceFromConnections(lastNode, way, name, highway);
-
-        SurfaceResult result = evaluateEndpoints(infoAtFirst, infoAtLast);
-
-        // For generic surfaces, validate the suggestion is in the same category
-        if (existingSurface != null && result.hasSuggestion()) {
-            if (!isSameCategory(existingSurface, result.getSuggestedSurface())) {
-                return new SurfaceResult(null, false);
+        // No surface -> suggest paved
+        if (existingSurface == null) {
+            if (checkTagCompatibility(way, "paved")) {
+                return new SurfaceResult("paved");
             }
-            return SurfaceResult.upgrade(result.getSuggestedSurface(), result.isBothEnds());
+            return SurfaceResult.none();
         }
 
-        return result;
+        // Already paved or a specific paved surface -> no action needed
+        if ("paved".equals(existingSurface)
+                || HighwayConstants.PAVED_SURFACES.contains(existingSurface)) {
+            return SurfaceResult.none();
+        }
+
+        // Has an unpaved surface -> conflict
+        return SurfaceResult.conflict();
     }
 
     /**
-     * Evaluate endpoint surface info and produce a result.
+     * Check Rule 3: service road inside a parking area inherits the area's surface.
+     *
+     * @param way         the service road to check
+     * @param parkingArea the containing parking area (closed way with surface tag)
+     * @return a result with the suggested surface, a conflict, upgrade, or none
      */
-    private SurfaceResult evaluateEndpoints(NodeSurfaceInfo infoAtFirst, NodeSurfaceInfo infoAtLast) {
-        // Best case: both ends have matching surfaces
-        if (infoAtFirst.surface != null && infoAtFirst.surface.equals(infoAtLast.surface)) {
-            return new SurfaceResult(infoAtFirst.surface, true);
+    public SurfaceResult checkParkingArea(Way way, Way parkingArea) {
+        String areaSurface = parkingArea.get(SURFACE);
+        if (areaSurface == null || areaSurface.isEmpty()) {
+            return SurfaceResult.none();
         }
 
-        // Conflict: both ends have a surface but they disagree
-        if (infoAtFirst.surface != null && infoAtLast.surface != null) {
-            return SurfaceResult.conflict();
+        if (!checkTagCompatibility(way, areaSurface)) {
+            return SurfaceResult.none();
         }
 
-        // Conflict: one end has a surface, the other has a node-level conflict
-        if (infoAtFirst.surface != null && infoAtLast.hasConflict) {
-            return SurfaceResult.conflict();
-        }
-        if (infoAtLast.surface != null && infoAtFirst.hasConflict) {
-            return SurfaceResult.conflict();
+        return reconcileWithExisting(way, areaSurface);
+    }
+
+    /**
+     * Reconcile a suggested surface with an existing surface on a way.
+     * Returns a suggestion, upgrade, conflict, or none as appropriate.
+     *
+     * @param way              the way
+     * @param suggestedSurface the surface to suggest
+     * @return the result
+     */
+    public static SurfaceResult reconcileWithExisting(Way way, String suggestedSurface) {
+        String existingSurface = way.get("surface");
+
+        // No existing surface -> new suggestion
+        if (existingSurface == null) {
+            return new SurfaceResult(suggestedSurface);
         }
 
-        // One end has a surface, the other has no info — suggest with lower confidence
-        if (infoAtFirst.surface != null) {
-            return new SurfaceResult(infoAtFirst.surface, false);
-        }
-        if (infoAtLast.surface != null) {
-            return new SurfaceResult(infoAtLast.surface, false);
+        // Same value -> nothing to do
+        if (existingSurface.equals(suggestedSurface)) {
+            return SurfaceResult.none();
         }
 
-        // Both ends have no info
-        return new SurfaceResult(null, false);
+        // Generic -> specific upgrade
+        if (isSameCategory(existingSurface, suggestedSurface)) {
+            return SurfaceResult.upgrade(suggestedSurface);
+        }
+
+        // Incompatible existing surface -> conflict
+        return SurfaceResult.conflict();
+    }
+
+    /**
+     * Check if a way is fully inside a closed parking area.
+     * All nodes of the way must be inside the polygon formed by the parking area.
+     *
+     * @param way         the service road
+     * @param parkingArea the closed parking area way
+     * @return true if all nodes of the way are inside the parking area
+     */
+    public static boolean isWayInsideArea(Way way, Way parkingArea) {
+        List<Node> polygonNodes = parkingArea.getNodes();
+        for (Node node : way.getNodes()) {
+            if (!Geometry.nodeInsidePolygon(node, polygonNodes)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Check if the way's own tags are compatible with the suggested surface.
+     * Returns false to block the suggestion entirely.
+     *
+     * <p>Hard rejects:
+     * <ul>
+     *   <li>tracktype grade2-5 + paved suggestion</li>
+     *   <li>tracktype grade1 + soft unpaved suggestion</li>
+     *   <li>4wd_only=yes + paved suggestion</li>
+     *   <li>smoothness excellent/good + soft unpaved suggestion</li>
+     *   <li>smoothness horrible/very_horrible/impassable + smooth paved suggestion</li>
+     * </ul>
+     *
+     * @param way              the way to check
+     * @param suggestedSurface the proposed surface value
+     * @return true if compatible, false if the suggestion should be blocked
+     */
+    public static boolean checkTagCompatibility(Way way, String suggestedSurface) {
+        boolean isPavedSuggestion = HighwayConstants.PAVED_SURFACES.contains(suggestedSurface)
+                || "paved".equals(suggestedSurface);
+        boolean isSoftUnpaved = SOFT_UNPAVED_SURFACES.contains(suggestedSurface);
+        boolean isSmoothPaved = SMOOTH_PAVED_SURFACES.contains(suggestedSurface);
+
+        // --- tracktype checks ---
+        String tracktype = way.get("tracktype");
+        if (tracktype != null) {
+            if ("grade1".equals(tracktype) && isSoftUnpaved) {
+                return false;
+            }
+            if (!"grade1".equals(tracktype) && isPavedSuggestion) {
+                return false;
+            }
+        }
+
+        // --- 4wd_only check ---
+        if ("yes".equals(way.get("4wd_only")) && isPavedSuggestion) {
+            return false;
+        }
+
+        // --- smoothness checks ---
+        String smoothness = way.get("smoothness");
+        if (smoothness != null) {
+            if (SMOOTH_PAVED.contains(smoothness) && isSoftUnpaved) {
+                return false;
+            }
+            if (ROUGH_SMOOTHNESS.contains(smoothness) && isSmoothPaved) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
      * Check if a suggested surface is a more specific value in the same category
      * as the existing generic surface.
+     *
+     * @param genericSurface  the existing generic surface (paved/unpaved)
+     * @param specificSurface the suggested specific surface
+     * @return true if the specific surface is in the same category
      */
-    private static boolean isSameCategory(String genericSurface, String specificSurface) {
+    public static boolean isSameCategory(String genericSurface, String specificSurface) {
         if ("paved".equals(genericSurface)) {
             return HighwayConstants.PAVED_SURFACES.contains(specificSurface);
         }
@@ -187,72 +284,5 @@ public class SurfaceCheck {
             return HighwayConstants.UNPAVED_SURFACES.contains(specificSurface);
         }
         return false;
-    }
-
-    /**
-     * Get the surface from connected roads at a node.
-     * Prefers same-name+highway roads when available, falling back to all roads.
-     * Returns a {@link NodeSurfaceInfo} distinguishing "no surface found" from
-     * "conflicting surfaces found".
-     */
-    private NodeSurfaceInfo getSurfaceFromConnections(Node node, Way excludeWay,
-                                                      String targetName, String targetHighway) {
-        // First pass: only same-name + same-highway connections
-        NodeSurfaceInfo sameRoad = collectSurfaces(node, excludeWay, targetName, targetHighway);
-        if (sameRoad.surface != null || sameRoad.hasConflict) {
-            return sameRoad;
-        }
-
-        // Fallback: all connected roads
-        return collectSurfaces(node, excludeWay, null, null);
-    }
-
-    /**
-     * Collect surface info from connected roads at a node.
-     * If filterName and filterHighway are non-null, only considers roads matching both.
-     */
-    private NodeSurfaceInfo collectSurfaces(Node node, Way excludeWay,
-                                            String filterName, String filterHighway) {
-        String foundSurface = null;
-
-        for (OsmPrimitive referrer : node.getReferrers()) {
-            if (referrer instanceof Way connectedWay && connectedWay != excludeWay) {
-                if (filterName != null
-                        && (!filterName.equals(connectedWay.get("name"))
-                            || !filterHighway.equals(connectedWay.get("highway")))) {
-                    continue;
-                }
-                String surface = getValidSurface(connectedWay);
-                if (surface != null) {
-                    if (foundSurface == null) {
-                        foundSurface = surface;
-                    } else if (!foundSurface.equals(surface)) {
-                        return new NodeSurfaceInfo(null, true);
-                    }
-                }
-            }
-        }
-
-        return new NodeSurfaceInfo(foundSurface, false);
-    }
-
-    /**
-     * Get the surface tag from a way if it's a valid, reviewed highway.
-     */
-    private String getValidSurface(Way way) {
-        // Must be a classified highway
-        String highway = way.get("highway");
-        if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
-            return null;
-        }
-
-        // Prefer roads that are reviewed (not tiger:reviewed=no)
-        // but accept any road with a surface tag since someone added it
-        String surface = way.get(SURFACE);
-        if (surface == null || surface.isEmpty()) {
-            return null;
-        }
-
-        return surface;
     }
 }

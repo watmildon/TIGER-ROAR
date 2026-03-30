@@ -1,0 +1,192 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version='0.6' generator='JOSM'>
+  <!--
+    Dual carriageway name corroboration test scenarios.
+    All coordinates are in southwest Florida area (~26.57N, -81.65W).
+    EastNorth distance at this latitude: ~1° lon ≈ 99,700m, ~1° lat ≈ 110,600m.
+    So 0.0001° ≈ 10m laterally, 0.0002° ≈ 20m.
+  -->
+
+  <!-- === Scenario DC1: Parallel oneways, one reviewed → corroboration fires === -->
+  <!-- Two parallel secondary roads ~20m apart, same name, both oneway.
+       DC1a is tiger:reviewed=no, DC1b has no tiger:reviewed (i.e. reviewed).
+       Expected: DC1a gets name corroborated via dual carriageway. -->
+  <node id='-100001' action='modify' visible='true' lat='26.5700' lon='-81.6500' />
+  <node id='-100002' action='modify' visible='true' lat='26.5700' lon='-81.6480' />
+  <node id='-100003' action='modify' visible='true' lat='26.5702' lon='-81.6500' />
+  <node id='-100004' action='modify' visible='true' lat='26.5702' lon='-81.6480' />
+  <way id='-200001' action='modify' visible='true'>
+    <nd ref='-100001' />
+    <nd ref='-100002' />
+    <tag k='_test_id' v='DC1a' />
+    <tag k='_test_note' v='Parallel oneway, tiger:reviewed=no — should be corroborated by DC1b' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Main Boulevard' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-200002' action='modify' visible='true'>
+    <nd ref='-100004' />
+    <nd ref='-100003' />
+    <tag k='_test_id' v='DC1b' />
+    <tag k='_test_note' v='Parallel oneway, reviewed (no tiger:reviewed tag) — corroborates DC1a' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Main Boulevard' />
+    <tag k='oneway' v='yes' />
+  </way>
+
+  <!-- === Scenario DC2: Both unreviewed → no corroboration === -->
+  <!-- Two parallel oneways, both tiger:reviewed=no. Should NOT corroborate. -->
+  <node id='-100011' action='modify' visible='true' lat='26.5710' lon='-81.6500' />
+  <node id='-100012' action='modify' visible='true' lat='26.5710' lon='-81.6480' />
+  <node id='-100013' action='modify' visible='true' lat='26.5712' lon='-81.6500' />
+  <node id='-100014' action='modify' visible='true' lat='26.5712' lon='-81.6480' />
+  <way id='-200011' action='modify' visible='true'>
+    <nd ref='-100011' />
+    <nd ref='-100012' />
+    <tag k='_test_id' v='DC2a' />
+    <tag k='_test_note' v='Both unreviewed — should NOT be corroborated' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Oak Avenue' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-200012' action='modify' visible='true'>
+    <nd ref='-100013' />
+    <nd ref='-100014' />
+    <tag k='_test_id' v='DC2b' />
+    <tag k='_test_note' v='Both unreviewed — should NOT be corroborated' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Oak Avenue' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+
+  <!-- === Scenario DC3: Different names → no corroboration === -->
+  <!-- Parallel oneways, one reviewed, but different names. -->
+  <node id='-100021' action='modify' visible='true' lat='26.5720' lon='-81.6500' />
+  <node id='-100022' action='modify' visible='true' lat='26.5720' lon='-81.6480' />
+  <node id='-100023' action='modify' visible='true' lat='26.5722' lon='-81.6500' />
+  <node id='-100024' action='modify' visible='true' lat='26.5722' lon='-81.6480' />
+  <way id='-200021' action='modify' visible='true'>
+    <nd ref='-100021' />
+    <nd ref='-100022' />
+    <tag k='_test_id' v='DC3a' />
+    <tag k='_test_note' v='Different names — should NOT be corroborated' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Elm Street' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-200022' action='modify' visible='true'>
+    <nd ref='-100023' />
+    <nd ref='-100024' />
+    <tag k='_test_id' v='DC3b' />
+    <tag k='_test_note' v='Different name — does not corroborate DC3a' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Pine Street' />
+    <tag k='oneway' v='yes' />
+  </way>
+
+  <!-- === Scenario DC4: Not oneway → no corroboration === -->
+  <!-- One road is not oneway, even though parallel with same name. -->
+  <node id='-100031' action='modify' visible='true' lat='26.5730' lon='-81.6500' />
+  <node id='-100032' action='modify' visible='true' lat='26.5730' lon='-81.6480' />
+  <node id='-100033' action='modify' visible='true' lat='26.5732' lon='-81.6500' />
+  <node id='-100034' action='modify' visible='true' lat='26.5732' lon='-81.6480' />
+  <way id='-200031' action='modify' visible='true'>
+    <nd ref='-100031' />
+    <nd ref='-100032' />
+    <tag k='_test_id' v='DC4a' />
+    <tag k='_test_note' v='Target is not oneway — should NOT be corroborated' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Cedar Road' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-200032' action='modify' visible='true'>
+    <nd ref='-100033' />
+    <nd ref='-100034' />
+    <tag k='_test_id' v='DC4b' />
+    <tag k='_test_note' v='Oneway parallel road — but DC4a is not oneway so check does not apply' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Cedar Road' />
+    <tag k='oneway' v='yes' />
+  </way>
+
+  <!-- === Scenario DC5: Alignment-only reviewed → no corroboration === -->
+  <!-- Parallel oneway, but the corroborating road has tiger:reviewed=alignment.
+       Alignment-only review does not prove the name is correct. -->
+  <node id='-100041' action='modify' visible='true' lat='26.5740' lon='-81.6500' />
+  <node id='-100042' action='modify' visible='true' lat='26.5740' lon='-81.6480' />
+  <node id='-100043' action='modify' visible='true' lat='26.5742' lon='-81.6500' />
+  <node id='-100044' action='modify' visible='true' lat='26.5742' lon='-81.6480' />
+  <way id='-200041' action='modify' visible='true'>
+    <nd ref='-100041' />
+    <nd ref='-100042' />
+    <tag k='_test_id' v='DC5a' />
+    <tag k='_test_note' v='Alignment-only reviewed parallel road — should NOT corroborate name' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Birch Drive' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-200042' action='modify' visible='true'>
+    <nd ref='-100043' />
+    <nd ref='-100044' />
+    <tag k='_test_id' v='DC5b' />
+    <tag k='_test_note' v='tiger:reviewed=alignment — does not prove name, should not corroborate DC5a' />
+    <tag k='highway' v='secondary' />
+    <tag k='name' v='Birch Drive' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='alignment' />
+  </way>
+
+  <!-- === Scenario DC6: tiger:reviewed=name on parallel → corroboration fires === -->
+  <node id='-100051' action='modify' visible='true' lat='26.5750' lon='-81.6500' />
+  <node id='-100052' action='modify' visible='true' lat='26.5750' lon='-81.6480' />
+  <node id='-100053' action='modify' visible='true' lat='26.5752' lon='-81.6500' />
+  <node id='-100054' action='modify' visible='true' lat='26.5752' lon='-81.6480' />
+  <way id='-200051' action='modify' visible='true'>
+    <nd ref='-100051' />
+    <nd ref='-100052' />
+    <tag k='_test_id' v='DC6a' />
+    <tag k='_test_note' v='Parallel road has tiger:reviewed=name — should corroborate' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Maple Highway' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-200052' action='modify' visible='true'>
+    <nd ref='-100053' />
+    <nd ref='-100054' />
+    <tag k='_test_id' v='DC6b' />
+    <tag k='_test_note' v='tiger:reviewed=name — name is verified, corroborates DC6a' />
+    <tag k='highway' v='primary' />
+    <tag k='name' v='Maple Highway' />
+    <tag k='oneway' v='yes' />
+    <tag k='tiger:reviewed' v='name' />
+  </way>
+
+  <!-- === Scenario DC7: Motorway (implied oneway) → corroboration fires === -->
+  <node id='-100061' action='modify' visible='true' lat='26.5760' lon='-81.6500' />
+  <node id='-100062' action='modify' visible='true' lat='26.5760' lon='-81.6480' />
+  <node id='-100063' action='modify' visible='true' lat='26.5762' lon='-81.6500' />
+  <node id='-100064' action='modify' visible='true' lat='26.5762' lon='-81.6480' />
+  <way id='-200061' action='modify' visible='true'>
+    <nd ref='-100061' />
+    <nd ref='-100062' />
+    <tag k='_test_id' v='DC7a' />
+    <tag k='_test_note' v='Motorway implies oneway — should be corroborated by DC7b' />
+    <tag k='highway' v='motorway' />
+    <tag k='name' v='Interstate 75' />
+    <tag k='tiger:reviewed' v='no' />
+  </way>
+  <way id='-200062' action='modify' visible='true'>
+    <nd ref='-100064' />
+    <nd ref='-100063' />
+    <tag k='_test_id' v='DC7b' />
+    <tag k='_test_note' v='Motorway reviewed — corroborates DC7a' />
+    <tag k='highway' v='motorway' />
+    <tag k='name' v='Interstate 75' />
+  </way>
+</osm>

@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.Severity;
@@ -17,6 +18,7 @@ import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
 import org.openstreetmap.josm.plugins.tigerreview.checks.AddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck;
+import org.openstreetmap.josm.plugins.tigerreview.checks.DualCarriageCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NadAddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -75,6 +77,30 @@ public class TIGERReviewTest extends Test {
     /** NAD addresses along road suggest a different name */
     public static final int TIGER_NAD_NAME_SUGGESTION = CODE_PREFIX + 16;
 
+    /** OSM addr:street data along road suggests a different name */
+    public static final int TIGER_ADDRESS_NAME_SUGGESTION = CODE_PREFIX + 17;
+
+    /** Name verified via etymology/wikidata/wikipedia tags on the way itself */
+    public static final int TIGER_NAME_VERIFIED_ETYMOLOGY = CODE_PREFIX + 18;
+
+    /** Both NAD and OSM addr:street agree on a different name suggestion */
+    public static final int TIGER_COMBINED_NAME_SUGGESTION = CODE_PREFIX + 19;
+
+    /** Name verified because the current user modified the name tag */
+    public static final int TIGER_NAME_VERIFIED_USER_EDIT = CODE_PREFIX + 20;
+
+    /** NAD addresses suggest adding a directional prefix/suffix to the name */
+    public static final int TIGER_NAD_DIRECTIONAL_SUGGESTION = CODE_PREFIX + 21;
+
+    /** OSM addr:street data suggests adding a directional prefix/suffix to the name */
+    public static final int TIGER_ADDRESS_DIRECTIONAL_SUGGESTION = CODE_PREFIX + 22;
+
+    /** Both NAD and OSM addr:street agree on a directional prefix/suffix addition */
+    public static final int TIGER_COMBINED_DIRECTIONAL_SUGGESTION = CODE_PREFIX + 23;
+
+    /** Name verified via nearby parallel carriageway (dual carriageway corroboration) */
+    public static final int TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY = CODE_PREFIX + 24;
+
     /** Accepted values for tiger:reviewed (no error triggered).
      *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
@@ -90,13 +116,16 @@ public class TIGERReviewTest extends Test {
     private NodeVersionCheck nodeVersionCheck;
     private AddressCheck addressCheck;
     private NadAddressCheck nadAddressCheck;
+    private DualCarriageCheck dualCarriageCheck;
 
     // Check enable flags
     private boolean connectedRoadCheckEnabled;
     private boolean addressCheckEnabled;
     private boolean nodeVersionCheckEnabled;
     private boolean nadCheckEnabled;
+    private boolean dualCarriageCheckEnabled;
     private boolean stripTigerTags;
+    private boolean addressesAssigned;
 
     public TIGERReviewTest() {
         super(tr("TIGER ROAR"), tr("Validates TIGER-imported roadways for review status"));
@@ -115,6 +144,8 @@ public class TIGERReviewTest extends Test {
                 TIGERReviewPreferences.PREF_ENABLE_NODE_VERSION_CHECK, true);
         nadCheckEnabled = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
+        dualCarriageCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_DUAL_CARRIAGE_CHECK, true);
         stripTigerTags = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
 
@@ -133,9 +164,13 @@ public class TIGERReviewTest extends Test {
                 TIGERReviewPreferences.DEFAULT_NAD_MAX_DISTANCE);
         String additionalBotUsernames = Config.getPref().get(
                 TIGERReviewPreferences.PREF_ADDITIONAL_BOT_USERNAMES, "");
+        long postTigerNodeIdThreshold = (long) (Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_NODE_MIN_POST_TIGER_ID,
+                TIGERReviewPreferences.DEFAULT_NODE_MIN_POST_TIGER_ID) * 1_000_000_000L);
 
         connectedRoadCheck = new ConnectedRoadCheck();
-        nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited, additionalBotUsernames);
+        nodeVersionCheck = new NodeVersionCheck(minAvgVersion, minPercentageEdited,
+                additionalBotUsernames, postTigerNodeIdThreshold);
         addressCheck = new AddressCheck(maxAddressDistance);
         nadAddressCheck = new NadAddressCheck(maxNadDistance);
 
@@ -157,15 +192,49 @@ public class TIGERReviewTest extends Test {
             return;
         }
 
+        // Lazy address and dual carriageway index assignment on first visit
+        if (!addressesAssigned && way.getDataSet() != null) {
+            List<Way> candidateWays = way.getDataSet().getWays().stream()
+                    .filter(Way::isUsable)
+                    .filter(w -> w.get("highway") != null
+                            && CLASSIFIED_HIGHWAYS.contains(w.get("highway")))
+                    .collect(Collectors.toList());
+            var roadGrid = SpatialUtils.buildRoadSegmentGrid(candidateWays);
+            if (addressCheckEnabled) {
+                addressCheck.assignAddressesToRoads(candidateWays, roadGrid);
+            }
+            if (nadCheckEnabled) {
+                nadAddressCheck.assignAddressesToRoads(candidateWays, roadGrid);
+            }
+            if (dualCarriageCheckEnabled) {
+                List<Way> onewayWays = candidateWays.stream()
+                        .filter(DualCarriageCheck::isOneway)
+                        .collect(Collectors.toList());
+                double maxDualCarriageDistance = Config.getPref().getDouble(
+                        TIGERReviewPreferences.PREF_DUAL_CARRIAGE_MAX_DISTANCE,
+                        TIGERReviewPreferences.DEFAULT_DUAL_CARRIAGE_MAX_DISTANCE);
+                var onewayGrid = SpatialUtils.buildRoadSegmentGrid(onewayWays);
+                dualCarriageCheck = new DualCarriageCheck(onewayGrid, maxDualCarriageDistance);
+            }
+            addressesAssigned = true;
+        }
+
         List<ReviewResult> results = TIGERReviewAnalyzer.analyzeWay(way,
                 connectedRoadCheck, nodeVersionCheck, addressCheck,
-                nadAddressCheck,
+                nadAddressCheck, dualCarriageCheck,
                 connectedRoadCheckEnabled, addressCheckEnabled,
                 nodeVersionCheckEnabled,
-                nadCheckEnabled, stripTigerTags);
+                nadCheckEnabled, dualCarriageCheckEnabled, stripTigerTags);
 
         for (ReviewResult result : results) {
-            errors.add(toTestError(result));
+            // Only emit high-value warnings in the validator:
+            // fully verified (REMOVE_TAG) and residual tiger:* tags.
+            // Other results (name-only, alignment-only, suggestions) are
+            // available in the TIGER ROAR side panel but too noisy for the validator.
+            if (result.getCode() == TIGER_RESIDUAL_TAGS
+                    || result.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+                errors.add(toTestError(result));
+            }
         }
     }
 
@@ -179,12 +248,6 @@ public class TIGERReviewTest extends Test {
 
         // Handle no-fix results (null fixAction) before the switch
         if (result.getFixAction() == null) {
-            if (code == TIGER_NAD_NAME_SUGGESTION) {
-                return TestError.builder(this, Severity.OTHER, code)
-                        .message(GROUP_MESSAGE, marktr("NAD suggests different name [NAD: {0}]"), message)
-                        .primitives(way)
-                        .build();
-            }
             if (code == TIGER_REVIEWED_INVALID_VALUE) {
                 return TestError.builder(this, Severity.ERROR, code)
                         .message(GROUP_MESSAGE,
@@ -235,6 +298,47 @@ public class TIGERReviewTest extends Test {
         case SET_ALIGNMENT_REVIEWED:
             return TestError.builder(this, Severity.WARNING, code)
                     .message(GROUP_MESSAGE, marktr("Alignment verified ({0}), name not corroborated"), message)
+                    .primitives(way)
+                    .fix(result.getFixSupplier())
+                    .build();
+        case SUGGEST_NAME:
+            if (code == TIGER_COMBINED_NAME_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD and nearby addresses agree on different name [{0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            if (code == TIGER_COMBINED_DIRECTIONAL_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD and nearby addresses agree on directional upgrade [{0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            if (code == TIGER_NAD_NAME_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD suggests different name [NAD: {0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            if (code == TIGER_NAD_DIRECTIONAL_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("NAD suggests directional upgrade [NAD: {0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            if (code == TIGER_ADDRESS_DIRECTIONAL_SUGGESTION) {
+                return TestError.builder(this, Severity.OTHER, code)
+                        .message(GROUP_MESSAGE, marktr("Nearby addresses suggest directional upgrade [{0}]"), message)
+                        .primitives(way)
+                        .fix(result.getFixSupplier())
+                        .build();
+            }
+            return TestError.builder(this, Severity.OTHER, code)
+                    .message(GROUP_MESSAGE, marktr("Nearby addresses suggest different name [{0}]"), message)
                     .primitives(way)
                     .fix(result.getFixSupplier())
                     .build();

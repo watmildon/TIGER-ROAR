@@ -65,6 +65,13 @@ public class NodeVersionCheck {
      */
     public static final String TEST_USER_TAG = "__TEST_USER";
 
+    /**
+     * Tag key for overriding node ID in tests.
+     * When present on a node, this value is used instead of the actual OSM ID
+     * for post-TIGER node ID detection.
+     */
+    public static final String TEST_NODE_ID_TAG = "__TEST_NODE_ID";
+
     /** Values that indicate alignment has been explicitly reviewed */
     private static final Set<String> ALIGNMENT_REVIEWED_VALUES = new HashSet<>(
             Arrays.asList("position", "alignment", "yes"));
@@ -72,6 +79,7 @@ public class NodeVersionCheck {
     private final double minAvgVersion;
     private final double minPercentageEdited;
     private final Set<String> automatedUsernames;
+    private final long postTigerNodeIdThreshold;
 
     /** Default minimum percentage of nodes that must be edited by humans (not bots) */
     public static final double DEFAULT_MIN_PERCENTAGE_EDITED = 0.8;
@@ -87,7 +95,9 @@ public class NodeVersionCheck {
         /** Every node in the way has been edited by a human (not a bot) */
         ALL_NODES_EDITED,
         /** High percentage of nodes have been edited by a human (not a bot) */
-        HIGH_PERCENTAGE_EDITED
+        HIGH_PERCENTAGE_EDITED,
+        /** 2-node way where both nodes are shared with alignment-verified roads */
+        SHARED_NODES_VERIFIED
     }
 
     /**
@@ -127,7 +137,7 @@ public class NodeVersionCheck {
      * @param minAvgVersion Minimum average node version to consider alignment verified
      */
     public NodeVersionCheck(double minAvgVersion) {
-        this(minAvgVersion, DEFAULT_MIN_PERCENTAGE_EDITED, "");
+        this(minAvgVersion, DEFAULT_MIN_PERCENTAGE_EDITED, "", DEFAULT_POST_TIGER_NODE_ID_THRESHOLD);
     }
 
     /**
@@ -137,7 +147,18 @@ public class NodeVersionCheck {
      * @param minPercentageEdited Minimum percentage of nodes edited by humans to consider alignment verified
      */
     public NodeVersionCheck(double minAvgVersion, double minPercentageEdited) {
-        this(minAvgVersion, minPercentageEdited, "");
+        this(minAvgVersion, minPercentageEdited, "", DEFAULT_POST_TIGER_NODE_ID_THRESHOLD);
+    }
+
+    /**
+     * Create a new NodeVersionCheck with default post-TIGER threshold.
+     *
+     * @param minAvgVersion Minimum average node version to consider alignment verified
+     * @param minPercentageEdited Minimum percentage of nodes edited by humans to consider alignment verified
+     * @param additionalBotUsernames Semicolon-delimited list of additional usernames to treat as bots
+     */
+    public NodeVersionCheck(double minAvgVersion, double minPercentageEdited, String additionalBotUsernames) {
+        this(minAvgVersion, minPercentageEdited, additionalBotUsernames, DEFAULT_POST_TIGER_NODE_ID_THRESHOLD);
     }
 
     /**
@@ -146,11 +167,14 @@ public class NodeVersionCheck {
      * @param minAvgVersion Minimum average node version to consider alignment verified
      * @param minPercentageEdited Minimum percentage of nodes edited by humans to consider alignment verified
      * @param additionalBotUsernames Semicolon-delimited list of additional usernames to treat as bots
+     * @param postTigerNodeIdThreshold Minimum node ID to consider post-TIGER (human-created)
      */
-    public NodeVersionCheck(double minAvgVersion, double minPercentageEdited, String additionalBotUsernames) {
+    public NodeVersionCheck(double minAvgVersion, double minPercentageEdited,
+            String additionalBotUsernames, long postTigerNodeIdThreshold) {
         this.minAvgVersion = minAvgVersion;
         this.minPercentageEdited = minPercentageEdited;
         this.automatedUsernames = buildAutomatedUsernamesSet(additionalBotUsernames);
+        this.postTigerNodeIdThreshold = postTigerNodeIdThreshold;
     }
 
     /**
@@ -216,6 +240,15 @@ public class NodeVersionCheck {
         // bumping nodes to v2) should not count as alignment verification.
         if (!stats.hasUserInfo && stats.avgVersion > minAvgVersion) {
             return new AlignmentResult(AlignmentEvidence.AVG_VERSION_HIGH, stats.avgVersion, stats.percentageEdited);
+        }
+
+        // 2-node way fallback: if the way has exactly 2 nodes and both nodes
+        // are shared with other highway ways whose alignment is independently
+        // verified, the 2-node way's alignment is also verified (its position
+        // is fully determined by those two endpoint nodes).
+        if (way.getNodesCount() == 2 && areBothNodesOnVerifiedRoads(way)) {
+            return new AlignmentResult(AlignmentEvidence.SHARED_NODES_VERIFIED,
+                    stats.avgVersion, stats.percentageEdited);
         }
 
         return new AlignmentResult(AlignmentEvidence.NONE, stats.avgVersion, stats.percentageEdited);
@@ -335,16 +368,53 @@ public class NodeVersionCheck {
     }
 
     /**
+     * Get the effective node ID, using __TEST_NODE_ID tag if present.
+     *
+     * @param node The node to check
+     * @return The test node ID if __TEST_NODE_ID tag exists, otherwise the actual OSM ID
+     */
+    private long getEffectiveNodeId(Node node) {
+        String testId = node.get(TEST_NODE_ID_TAG);
+        if (testId != null) {
+            try {
+                return Long.parseLong(testId);
+            } catch (NumberFormatException e) {
+                // Fall back to actual ID if tag value is invalid
+                return node.getId();
+            }
+        }
+        return node.getId();
+    }
+
+    /**
+     * Minimum node ID that post-dates all TIGER-era automated activity.
+     * OSM node IDs are assigned sequentially. The TIGER import ran Aug 2007 - May 2008,
+     * and the last bot cleanup (bot-mode) ended April 2013. By 2013, node IDs had
+     * surpassed 2 billion. A v1 node with ID above this threshold was created by a
+     * human mapper, not by the TIGER import or subsequent bot cleanups.
+     *
+     * <p>Using 8 billion as a conservative threshold (reached ~2021) ensures we're
+     * well past the era when imagery was too poor for meaningful alignment review
+     * in many rural US areas where TIGER review is most relevant.</p>
+     */
+    /** Default minimum node ID to consider post-TIGER (8 billion ≈ 2021) */
+    public static final long DEFAULT_POST_TIGER_NODE_ID_THRESHOLD = 8_000_000_000L;
+
+    /**
      * Determines if a node has been edited by a human (not a bot/importer).
      *
      * <p>A node is considered "edited" if:</p>
      * <ul>
      *   <li>It was last edited by a user NOT in the known bot/importer list, OR</li>
+     *   <li>If no user info is available, its ID post-dates the TIGER import era
+     *       (created after all known bot activity ended), OR</li>
      *   <li>If no user info is available, it has version > 2 (fallback heuristic)</li>
      * </ul>
      *
-     * <p>The fallback uses version > 2 because versions 1-2 typically represent
-     * the original TIGER import plus bot cleanup (woodpeck_fixbot, etc.).</p>
+     * <p>The version fallback uses version > 2 because versions 1-2 typically represent
+     * the original TIGER import plus bot cleanup (woodpeck_fixbot, etc.). However,
+     * nodes created well after the import era (high IDs) at version 1 are definitively
+     * human-created — they result from way splits or new geometry added by mappers.</p>
      *
      * @param node The node to check
      * @return true if the node appears to have been human-edited
@@ -374,9 +444,75 @@ public class NodeVersionCheck {
             return true;
         }
 
-        // Fallback: if no user info available, use version > 2 heuristic
+        // Fallback: no user info available.
+        // First check if the node ID post-dates the TIGER import era.
+        // A v1 node with a high ID was created by a human mapper (e.g., from
+        // splitting an old way), not by the original import.
+        if (getEffectiveNodeId(node) > postTigerNodeIdThreshold) {
+            return true;
+        }
+
+        // For older nodes without user info, use version > 2 heuristic
         // (accounts for import + bot cleanup)
         return version > 2;
+    }
+
+    /**
+     * Check if both nodes of a 2-node way are shared with other highway ways
+     * whose alignment is independently verified (without using this 2-node
+     * fallback, to avoid circular reasoning).
+     */
+    private boolean areBothNodesOnVerifiedRoads(Way way) {
+        Node node1 = way.getNode(0);
+        Node node2 = way.getNode(1);
+        return isNodeOnVerifiedRoad(node1, way) && isNodeOnVerifiedRoad(node2, way);
+    }
+
+    /**
+     * Check if a node is shared with at least one other highway way whose
+     * alignment is verified by its own node stats (not via the 2-node fallback).
+     */
+    private boolean isNodeOnVerifiedRoad(Node node, Way excludeWay) {
+        for (Way parentWay : node.getParentWays()) {
+            if (parentWay == excludeWay || !parentWay.isUsable()) {
+                continue;
+            }
+            String highway = parentWay.get("highway");
+            if (highway == null) {
+                continue;
+            }
+            // Check alignment of the connected way using only direct evidence
+            // (not the 2-node fallback) to avoid circular reasoning.
+            if (isDirectlyAlignmentVerified(parentWay)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if a way's alignment is verified by direct evidence only:
+     * explicit tags, all-nodes-edited, high-percentage-edited, or avg-version.
+     * Does NOT use the 2-node shared-node fallback.
+     */
+    private boolean isDirectlyAlignmentVerified(Way way) {
+        String tigerReviewed = way.get(TIGER_REVIEWED);
+        if (tigerReviewed != null && ALIGNMENT_REVIEWED_VALUES.contains(tigerReviewed)) {
+            return true;
+        }
+
+        NodeStats stats = calculateNodeStats(way);
+
+        if (stats.allNodesEdited && stats.nodeCount > 0) {
+            return true;
+        }
+        if (stats.percentageEdited >= minPercentageEdited && stats.nodeCount > 0) {
+            return true;
+        }
+        if (!stats.hasUserInfo && stats.avgVersion > minAvgVersion) {
+            return true;
+        }
+        return false;
     }
 
     private static class NodeStats {

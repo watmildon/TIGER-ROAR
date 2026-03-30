@@ -9,34 +9,53 @@ import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.validation.Severity;
 import org.openstreetmap.josm.data.validation.Test;
 import org.openstreetmap.josm.data.validation.TestError;
+import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
 import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck;
-import org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck.SurfaceResult;
 
 /**
- * Validator test for suggesting road surface tags based on connected roads.
+ * Validator test for suggesting road surface tags.
  *
- * Runs independently of TIGER review — analyzes all vehicular roads
- * that lack a surface tag, regardless of tiger:reviewed status.
+ * <p>Three rules:
+ * <ol>
+ *   <li>Connected same-name/highway roads (immediate neighbors in per-way mode)</li>
+ *   <li>{@code lanes} tag implies paved</li>
+ *   <li>Service roads inside parking areas</li>
+ * </ol>
+ *
+ * <p>Analysis logic is in {@link SurfaceAnalyzer}; this class translates
+ * results into JOSM TestError objects.
  */
 public class SurfaceTest extends Test {
 
     /** Error code prefix based on Wikidata road surface ID Q1049667 */
     private static final int CODE_PREFIX = 10496670;
 
-    /** Surface inferred from connected roads at both ends (high confidence) */
-    public static final int SURFACE_SUGGESTED_BOTH_ENDS = CODE_PREFIX + 1;
+    /** Surface from connected same-name/highway roads */
+    public static final int SURFACE_CONNECTED_ROAD = CODE_PREFIX + 1;
 
-    /** Surface inferred from connected road at one end (lower confidence) */
-    public static final int SURFACE_SUGGESTED_ONE_END = CODE_PREFIX + 2;
+    /** Generic surface upgrade from connected same-name/highway roads */
+    public static final int SURFACE_CONNECTED_ROAD_UPGRADE = CODE_PREFIX + 2;
 
-    /** Connected roads at endpoints have conflicting surfaces (needs human review) */
+    /** Incompatible surfaces found (needs human review, no fix) */
     public static final int SURFACE_CONFLICT = CODE_PREFIX + 3;
 
-    /** Generic surface (paved/unpaved) can be upgraded to a specific value, both ends agree */
-    public static final int SURFACE_UPGRADE_BOTH_ENDS = CODE_PREFIX + 4;
+    /** Road has lanes tag -> surface=paved */
+    public static final int SURFACE_LANES_PAVED = CODE_PREFIX + 4;
 
-    /** Generic surface (paved/unpaved) can be upgraded to a specific value, one end */
-    public static final int SURFACE_UPGRADE_ONE_END = CODE_PREFIX + 5;
+    /** Road has lanes tag but existing surface contradicts paved (no fix) */
+    public static final int SURFACE_LANES_CONFLICT = CODE_PREFIX + 5;
+
+    /** Service road inside parking area inherits surface */
+    public static final int SURFACE_PARKING_AREA = CODE_PREFIX + 6;
+
+    /** Generic surface upgrade from parking area */
+    public static final int SURFACE_PARKING_AREA_UPGRADE = CODE_PREFIX + 7;
+
+    /** Surface inferred from connected crossing way */
+    public static final int SURFACE_CROSSING = CODE_PREFIX + 8;
+
+    /** Generic surface upgrade from connected crossing way */
+    public static final int SURFACE_CROSSING_UPGRADE = CODE_PREFIX + 9;
 
     /** Group message for all surface warnings in the validator tree */
     private static final String GROUP_MESSAGE = tr("Surface Suggestion");
@@ -45,7 +64,7 @@ public class SurfaceTest extends Test {
 
     public SurfaceTest() {
         super(tr("Surface Suggestion"),
-              tr("Suggests surface tags for roads based on connected road surfaces"));
+              tr("Suggests surface tags for roads based on connected roads, lanes, and parking areas"));
     }
 
     @Override
@@ -56,60 +75,29 @@ public class SurfaceTest extends Test {
 
     @Override
     public void visit(Way way) {
-        if (!way.isUsable()) {
+        if (!SurfaceAnalyzer.isEligible(way)) {
             return;
         }
 
-        String highway = way.get("highway");
-        if (highway == null || !HighwayConstants.SURFACE_HIGHWAYS.contains(highway)) {
+        SurfaceSuggestion suggestion = SurfaceAnalyzer.analyzeWay(way, surfaceCheck);
+        if (suggestion == null) {
             return;
         }
 
-        // Already has a specific surface — nothing to suggest
-        String existingSurface = way.get("surface");
-        if (existingSurface != null
-                && !"paved".equals(existingSurface)
-                && !"unpaved".equals(existingSurface)) {
-            return;
+        boolean isConflict = suggestion.getCode() == SURFACE_CONFLICT
+                || suggestion.getCode() == SURFACE_LANES_CONFLICT;
+        Severity severity = isConflict ? Severity.OTHER : Severity.WARNING;
+
+        TestError.Builder builder = TestError.builder(this, severity, suggestion.getCode())
+                .message(GROUP_MESSAGE, marktr("{0}"), suggestion.getMessage())
+                .primitives(way);
+
+        if (suggestion.getSurfaceValue() != null) {
+            String surface = suggestion.getSurfaceValue();
+            builder.fix(() -> new ChangePropertyCommand(way, "surface", surface));
         }
 
-        SurfaceResult result = surfaceCheck.checkSurface(way);
-        if (result.isConflicting()) {
-            errors.add(TestError.builder(this, Severity.OTHER, SURFACE_CONFLICT)
-                    .message(GROUP_MESSAGE, marktr("conflicting surfaces at endpoints"))
-                    .primitives(way)
-                    .build());
-        } else if (result.hasSuggestion()) {
-            String surface = result.getSuggestedSurface();
-            if (result.isUpgrade()) {
-                int code = result.isBothEnds()
-                        ? SURFACE_UPGRADE_BOTH_ENDS
-                        : SURFACE_UPGRADE_ONE_END;
-                String evidence = result.isBothEnds()
-                        ? tr("connected roads at both ends")
-                        : tr("connected road");
-                errors.add(TestError.builder(this, Severity.WARNING, code)
-                        .message(GROUP_MESSAGE,
-                                marktr("upgrade {0} \u2192 {1} ({2})"),
-                                existingSurface, surface, evidence)
-                        .primitives(way)
-                        .fix(() -> new ChangePropertyCommand(way, "surface", surface))
-                        .build());
-            } else {
-                int code = result.isBothEnds()
-                        ? SURFACE_SUGGESTED_BOTH_ENDS
-                        : SURFACE_SUGGESTED_ONE_END;
-                String evidence = result.isBothEnds()
-                        ? tr("connected roads at both ends")
-                        : tr("connected road");
-                errors.add(TestError.builder(this, Severity.WARNING, code)
-                        .message(GROUP_MESSAGE,
-                                marktr("{0} ({1})"), surface, evidence)
-                        .primitives(way)
-                        .fix(() -> new ChangePropertyCommand(way, "surface", surface))
-                        .build());
-            }
-        }
+        errors.add(builder.build());
     }
 
     @Override

@@ -103,9 +103,9 @@ public class NadClient {
                 hasMore = pageResult.hasMore();
                 offset += MAX_FEATURES_PER_REQUEST;
 
-                // Safety limit - don't fetch more than 10000 addresses
-                if (allAddresses.size() >= 10000) {
-                    Logging.warn("NAD query hit safety limit of 10000 addresses");
+                // Safety limit - don't fetch more than 100000 addresses
+                if (allAddresses.size() >= 100_000) {
+                    Logging.warn("NAD query hit safety limit of 100000 addresses");
                     break;
                 }
             }

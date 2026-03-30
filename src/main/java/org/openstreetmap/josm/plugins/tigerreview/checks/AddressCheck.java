@@ -2,9 +2,13 @@
 package org.openstreetmap.josm.plugins.tigerreview.checks;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.openstreetmap.josm.data.coor.EastNorth;
 import org.openstreetmap.josm.data.osm.DataSet;
@@ -12,6 +16,12 @@ import org.openstreetmap.josm.data.osm.Node;
 import org.openstreetmap.josm.data.osm.OsmPrimitive;
 import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.data.projection.ProjectionRegistry;
+import org.openstreetmap.josm.plugins.tigerreview.HighwayConstants;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.CellRange;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.GridCell;
+import org.openstreetmap.josm.plugins.tigerreview.SpatialUtils.RoadSegmentEntry;
+import org.openstreetmap.josm.plugins.tigerreview.StreetNameUtils;
 
 /**
  * Checks if a road's name is corroborated by nearby address data.
@@ -23,12 +33,29 @@ public class AddressCheck {
 
     private static final String ADDR_STREET = "addr:street";
 
-    /** Grid cell size in meters (approximately) */
-    private static final double GRID_CELL_SIZE = 10.0;
-
     private final double maxDistanceMeters;
     private final Map<GridCell, List<AddressData>> addressGrid;
     private boolean indexBuilt;
+
+    /**
+     * Addresses whose addr:street matches one of the 2 nearest roads.
+     * These are excluded from name suggestions entirely.
+     * Uses identity-based set since AddressData is a record (value equality).
+     */
+    private final Set<AddressData> assignedAddresses = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /**
+     * Maps each address to its nearest road (by identity).
+     * An unassigned address can only suggest a name for its nearest road.
+     */
+    private final Map<AddressData, Way> nearestRoad = new IdentityHashMap<>();
+
+    /** Deferred assignment: stored candidate ways for lazy execution. */
+    private Collection<Way> deferredWays;
+    /** Deferred assignment: stored road grid for lazy execution. */
+    private Map<GridCell, List<RoadSegmentEntry>> deferredRoadGrid;
+    /** Whether assignment has been performed (eagerly or lazily). */
+    private boolean assignmentDone;
 
     /**
      * Create a new AddressCheck.
@@ -52,6 +79,8 @@ public class AddressCheck {
         }
 
         addressGrid.clear();
+        assignedAddresses.clear();
+        nearestRoad.clear();
 
         for (OsmPrimitive primitive : dataSet.allPrimitives()) {
             if (!primitive.isUsable()) {
@@ -68,12 +97,128 @@ public class AddressCheck {
                 continue;
             }
 
-            GridCell cell = new GridCell(en, GRID_CELL_SIZE);
+            GridCell cell = new GridCell(en);
             addressGrid.computeIfAbsent(cell, k -> new ArrayList<>())
-                    .add(new AddressData(addrStreet, en));
+                    .add(new AddressData(addrStreet, StreetNameUtils.expand(addrStreet), en));
         }
 
         indexBuilt = true;
+    }
+
+    /**
+     * Prepare lazy address-to-road assignment. The actual O(A×R) work is
+     * deferred until {@link #findSuggestedName} is first called, since
+     * the much more common {@link #isNameCorroborated} path doesn't need it.
+     *
+     * <p>Must be called after {@link #buildIndex}.</p>
+     *
+     * @param ways     The roads to consider for assignment
+     * @param roadGrid Pre-built road segment grid from
+     *                 {@link SpatialUtils#buildRoadSegmentGrid}, or null to
+     *                 fall back to linear scan (slower)
+     */
+    public void assignAddressesToRoads(Collection<Way> ways,
+            Map<GridCell, List<RoadSegmentEntry>> roadGrid) {
+        this.deferredWays = ways;
+        this.deferredRoadGrid = roadGrid;
+        this.assignmentDone = false;
+        assignedAddresses.clear();
+        nearestRoad.clear();
+    }
+
+    /**
+     * Execute the deferred address-to-road assignment if not yet done.
+     */
+    private void ensureAssignmentDone() {
+        if (assignmentDone || deferredWays == null) {
+            return;
+        }
+        assignmentDone = true;
+        doAssignAddressesToRoads(deferredWays, deferredRoadGrid);
+        // Release references to allow GC
+        deferredWays = null;
+        deferredRoadGrid = null;
+    }
+
+    /**
+     * Actually perform the address-to-road assignment.
+     */
+    private void doAssignAddressesToRoads(Collection<Way> ways,
+            Map<GridCell, List<RoadSegmentEntry>> roadGrid) {
+
+        if (addressGrid.isEmpty()) {
+            return;
+        }
+
+        // Build a map from Way → RoadSegments for quick lookup of expanded names
+        Map<Way, RoadSegments> roadsByWay = new IdentityHashMap<>();
+        for (Way way : ways) {
+            String name = way.get("name");
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            String highway = way.get("highway");
+            if (highway == null || !HighwayConstants.TIGER_HIGHWAYS.contains(highway)) {
+                continue;
+            }
+            roadsByWay.put(way, new RoadSegments(way, name, StreetNameUtils.expand(name), computeScaledDistance(way)));
+        }
+
+        if (roadsByWay.isEmpty()) {
+            return;
+        }
+
+        // For each address, find the 2 nearest roads using grid lookup
+        for (List<AddressData> cell : addressGrid.values()) {
+            for (AddressData addr : cell) {
+                RoadSegments nearest = null;
+                RoadSegments secondNearest = null;
+                double nearestDist = Double.MAX_VALUE;
+                double secondNearestDist = Double.MAX_VALUE;
+
+                // Use road grid to find candidate roads near this address
+                Set<Way> candidates = (roadGrid != null)
+                        ? SpatialUtils.findNearbyRoads(addr.location, roadGrid, maxDistanceMeters)
+                        : roadsByWay.keySet();
+
+                for (Way candidateWay : candidates) {
+                    RoadSegments road = roadsByWay.get(candidateWay);
+                    if (road == null) {
+                        continue; // not a named highway
+                    }
+
+                    double dist = minDistanceToWay(addr.location, road.way, road.scaledMaxDistance);
+                    if (dist > road.scaledMaxDistance) {
+                        continue; // too far from this road
+                    }
+
+                    if (dist < nearestDist) {
+                        secondNearest = nearest;
+                        secondNearestDist = nearestDist;
+                        nearest = road;
+                        nearestDist = dist;
+                    } else if (dist < secondNearestDist) {
+                        secondNearest = road;
+                        secondNearestDist = dist;
+                    }
+                }
+
+                if (nearest == null) {
+                    continue; // not near any road
+                }
+
+                nearestRoad.put(addr, nearest.way);
+
+                // Check if addr:street matches either of the 2 nearest roads
+                // (using pre-expanded names, with apostrophe tolerance)
+                if (StreetNameUtils.expandedNamesMatch(addr.expandedStreetName, nearest.expandedName)) {
+                    assignedAddresses.add(addr);
+                } else if (secondNearest != null
+                        && StreetNameUtils.expandedNamesMatch(addr.expandedStreetName, secondNearest.expandedName)) {
+                    assignedAddresses.add(addr);
+                }
+            }
+        }
     }
 
     /**
@@ -102,6 +247,9 @@ public class AddressCheck {
         // scale our threshold by the same factor to keep the ground-distance meaning.
         double scaledMaxDistance = computeScaledDistance(way);
 
+        // Expand road name once for all segment comparisons
+        String expandedName = StreetNameUtils.expand(name);
+
         // Check each segment of the way
         List<Node> nodes = way.getNodes();
         for (int i = 0; i < nodes.size() - 1; i++) {
@@ -119,13 +267,143 @@ public class AddressCheck {
                 continue;
             }
 
-            // Check addresses near this segment
-            if (hasMatchingAddressNearSegment(en1, en2, name, scaledMaxDistance)) {
+            // Check addresses near this segment (using pre-expanded names)
+            if (hasMatchingAddressNearSegment(en1, en2, expandedName, scaledMaxDistance)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * Find the most common addr:street name along a way that does NOT match the
+     * given OSM name. Used to suggest that a road might have a different name
+     * than what OSM currently records.
+     *
+     * <p>Only considers addresses that are:
+     * <ul>
+     *   <li>Not assigned (addr:street didn't match either of the 2 nearest roads)</li>
+     *   <li>Nearest to this specific way (won't suggest for a farther road)</li>
+     * </ul>
+     *
+     * @param way  The way to check
+     * @param name The current OSM name (matches are excluded)
+     * @return The most common non-matching addr:street name, or null if none found
+     */
+    public String findSuggestedName(Way way, String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+
+        // Build index on first use if not already built
+        if (!indexBuilt && way.getDataSet() != null) {
+            buildIndex(way.getDataSet());
+        }
+
+        // Trigger lazy assignment on first call
+        ensureAssignmentDone();
+
+        if (addressGrid.isEmpty()) {
+            return null;
+        }
+
+        double scaledMaxDistance = computeScaledDistance(way);
+        String expandedName = StreetNameUtils.expand(name);
+
+        Map<String, Integer> nameCounts = new HashMap<>();
+        List<Node> nodes = way.getNodes();
+        for (int i = 0; i < nodes.size() - 1; i++) {
+            Node n1 = nodes.get(i);
+            Node n2 = nodes.get(i + 1);
+
+            if (!n1.isLatLonKnown() || !n2.isLatLonKnown()) {
+                continue;
+            }
+
+            EastNorth en1 = n1.getEastNorth();
+            EastNorth en2 = n2.getEastNorth();
+
+            if (en1 == null || en2 == null) {
+                continue;
+            }
+
+            collectNonMatchingNamesNearSegment(en1, en2, expandedName, scaledMaxDistance, way, nameCounts);
+        }
+
+        if (nameCounts.isEmpty()) {
+            return null;
+        }
+
+        return Collections.max(nameCounts.entrySet(), Map.Entry.comparingByValue()).getKey();
+    }
+
+    /**
+     * Collect addr:street names near a segment that do NOT match the given name,
+     * are NOT assigned to a matching road, and whose nearest road is the given way.
+     *
+     * @param expandedName Pre-expanded road name (via {@link StreetNameUtils#expand})
+     */
+    private void collectNonMatchingNamesNearSegment(EastNorth en1, EastNorth en2, String expandedName,
+            double scaledMaxDistance, Way way, Map<String, Integer> nameCounts) {
+        CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
+
+        for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
+            if (StreetNameUtils.expandedNamesMatch(expandedName, addr.expandedStreetName)) {
+                continue; // skip matches (exact, abbreviation-expanded, or apostrophe-stripped)
+            }
+
+            if (assignedAddresses.contains(addr)) {
+                continue; // addr:street matched one of the 2 nearest roads
+            }
+
+            // Only suggest for the address's nearest road
+            Way addrNearest = nearestRoad.get(addr);
+            if (addrNearest != null && addrNearest != way) {
+                continue;
+            }
+
+            double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
+            if (dist <= scaledMaxDistance) {
+                nameCounts.merge(addr.streetName, 1, Integer::sum);
+            }
+        }
+    }
+
+    /**
+     * Compute the minimum distance from a point to any segment of a way.
+     *
+     * @return The minimum distance, or Double.MAX_VALUE if no valid segments
+     */
+    private static double minDistanceToWay(EastNorth point, Way way, double maxDistance) {
+        double minDist = Double.MAX_VALUE;
+        List<Node> nodes = way.getNodes();
+
+        for (int i = 0; i < nodes.size() - 1; i++) {
+            Node n1 = nodes.get(i);
+            Node n2 = nodes.get(i + 1);
+
+            if (!n1.isLatLonKnown() || !n2.isLatLonKnown()) {
+                continue;
+            }
+
+            EastNorth en1 = n1.getEastNorth();
+            EastNorth en2 = n2.getEastNorth();
+
+            if (en1 == null || en2 == null) {
+                continue;
+            }
+
+            double dist = SpatialUtils.distanceToSegment(point, en1, en2);
+            if (dist < minDist) {
+                minDist = dist;
+                if (minDist == 0) {
+                    return 0; // can't get closer
+                }
+            }
+        }
+
+        return minDist;
     }
 
     /**
@@ -139,76 +417,23 @@ public class AddressCheck {
 
     /**
      * Check if there's a matching address near a line segment.
+     *
+     * @param expandedName Pre-expanded road name (via {@link StreetNameUtils#expand})
      */
-    private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String name,
+    private boolean hasMatchingAddressNearSegment(EastNorth en1, EastNorth en2, String expandedName,
             double scaledMaxDistance) {
-        // Calculate bounding box around segment with buffer (using scaled distance)
-        double minX = Math.min(en1.getX(), en2.getX()) - scaledMaxDistance;
-        double maxX = Math.max(en1.getX(), en2.getX()) + scaledMaxDistance;
-        double minY = Math.min(en1.getY(), en2.getY()) - scaledMaxDistance;
-        double maxY = Math.max(en1.getY(), en2.getY()) + scaledMaxDistance;
+        CellRange range = CellRange.of(en1, en2, scaledMaxDistance);
 
-        // Calculate grid cell range to check
-        int minCellX = (int) Math.floor(minX / GRID_CELL_SIZE);
-        int maxCellX = (int) Math.floor(maxX / GRID_CELL_SIZE);
-        int minCellY = (int) Math.floor(minY / GRID_CELL_SIZE);
-        int maxCellY = (int) Math.floor(maxY / GRID_CELL_SIZE);
-
-        // Check all cells in range
-        for (int cx = minCellX; cx <= maxCellX; cx++) {
-            for (int cy = minCellY; cy <= maxCellY; cy++) {
-                GridCell cell = new GridCell(cx, cy);
-                List<AddressData> addresses = addressGrid.get(cell);
-
-                if (addresses == null) {
-                    continue;
-                }
-
-                for (AddressData addr : addresses) {
-                    // Case-insensitive comparison to handle minor casing differences
-                    if (name.equalsIgnoreCase(addr.streetName)) {
-                        // Check actual distance to segment
-                        double dist = distanceToSegment(addr.location, en1, en2);
-                        if (dist <= scaledMaxDistance) {
-                            return true;
-                        }
-                    }
+        for (AddressData addr : SpatialUtils.collectFromGrid(addressGrid, range)) {
+            if (StreetNameUtils.expandedNamesMatch(expandedName, addr.expandedStreetName)) {
+                double dist = SpatialUtils.distanceToSegment(addr.location, en1, en2);
+                if (dist <= scaledMaxDistance) {
+                    return true;
                 }
             }
         }
 
         return false;
-    }
-
-    /**
-     * Calculate the distance from a point to a line segment.
-     */
-    private double distanceToSegment(EastNorth point, EastNorth segStart, EastNorth segEnd) {
-        double dx = segEnd.getX() - segStart.getX();
-        double dy = segEnd.getY() - segStart.getY();
-
-        if (dx == 0 && dy == 0) {
-            // Segment is a point
-            return point.distance(segStart);
-        }
-
-        // Calculate projection parameter
-        double t = ((point.getX() - segStart.getX()) * dx + (point.getY() - segStart.getY()) * dy)
-                / (dx * dx + dy * dy);
-
-        if (t < 0) {
-            // Closest to start
-            return point.distance(segStart);
-        } else if (t > 1) {
-            // Closest to end
-            return point.distance(segEnd);
-        } else {
-            // Closest to interior point
-            EastNorth projection = new EastNorth(
-                    segStart.getX() + t * dx,
-                    segStart.getY() + t * dy);
-            return point.distance(projection);
-        }
     }
 
     /**
@@ -230,18 +455,14 @@ public class AddressCheck {
     }
 
     /**
-     * Grid cell for spatial indexing.
+     * Address data stored in the grid, with pre-expanded street name for fast matching.
      */
-    private record GridCell(int x, int y) {
-        GridCell(EastNorth en, double cellSize) {
-            this((int) Math.floor(en.getX() / cellSize),
-                 (int) Math.floor(en.getY() / cellSize));
-        }
+    private record AddressData(String streetName, String expandedStreetName, EastNorth location) {
     }
 
     /**
-     * Address data stored in the grid.
+     * Precomputed road data for assignment, with pre-expanded name for fast matching.
      */
-    private record AddressData(String streetName, EastNorth location) {
+    private record RoadSegments(Way way, String name, String expandedName, double scaledMaxDistance) {
     }
 }
