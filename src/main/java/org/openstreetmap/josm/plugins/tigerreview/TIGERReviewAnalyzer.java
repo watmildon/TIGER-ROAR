@@ -19,6 +19,7 @@ import org.openstreetmap.josm.data.osm.Way;
 import org.openstreetmap.josm.plugins.tigerreview.checks.AddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck.ConnectionType;
+import org.openstreetmap.josm.plugins.tigerreview.checks.DualCarriageCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NadAddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck.AlignmentEvidence;
@@ -189,6 +190,8 @@ public final class TIGERReviewAnalyzer {
                 TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
         boolean stripTigerTags = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
+        boolean dualCarriageCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_DUAL_CARRIAGE_CHECK, true);
 
         double maxAddressDistance = Config.getPref().getDouble(
                 TIGERReviewPreferences.PREF_ADDRESS_MAX_DISTANCE,
@@ -202,6 +205,9 @@ public final class TIGERReviewAnalyzer {
         double maxNadDistance = Config.getPref().getDouble(
                 TIGERReviewPreferences.PREF_NAD_MAX_DISTANCE,
                 TIGERReviewPreferences.DEFAULT_NAD_MAX_DISTANCE);
+        double maxDualCarriageDistance = Config.getPref().getDouble(
+                TIGERReviewPreferences.PREF_DUAL_CARRIAGE_MAX_DISTANCE,
+                TIGERReviewPreferences.DEFAULT_DUAL_CARRIAGE_MAX_DISTANCE);
         String additionalBotUsernames = Config.getPref().get(
                 TIGERReviewPreferences.PREF_ADDITIONAL_BOT_USERNAMES, "");
         long postTigerNodeIdThreshold = (long) (Config.getPref().getDouble(
@@ -239,6 +245,17 @@ public final class TIGERReviewAnalyzer {
             nadAddressCheck.assignAddressesToRoads(candidateWays, roadGrid);
         }
 
+        // Build dual carriageway spatial grid (oneway roads only)
+        DualCarriageCheck dualCarriageCheck = null;
+        if (dualCarriageCheckEnabled) {
+            List<Way> onewayWays = candidateWays.stream()
+                    .filter(DualCarriageCheck::isOneway)
+                    .collect(Collectors.toList());
+            Map<SpatialUtils.GridCell, List<SpatialUtils.RoadSegmentEntry>> onewayGrid =
+                    SpatialUtils.buildRoadSegmentGrid(onewayWays);
+            dualCarriageCheck = new DualCarriageCheck(onewayGrid, maxDualCarriageDistance);
+        }
+
         timer.start("analyzeWays");
         List<ReviewResult> results = new ArrayList<>();
 
@@ -256,17 +273,18 @@ public final class TIGERReviewAnalyzer {
             if ("no".equals(tigerReviewed)) {
                 analyzeUnreviewedRoad(way, results,
                         connectedRoadCheck, nodeVersionCheck, addressCheck,
-                        nadAddressCheck,
+                        nadAddressCheck, dualCarriageCheck,
                         connectedRoadCheckEnabled, addressCheckEnabled,
                         nodeVersionCheckEnabled,
-                        nadCheckEnabled, stripTigerTags);
+                        nadCheckEnabled, dualCarriageCheckEnabled, stripTigerTags);
             } else if ("name".equals(tigerReviewed)) {
                 analyzeNameReviewedRoad(way, results, nodeVersionCheck, stripTigerTags);
             } else if (isAlignmentReviewedValue(tigerReviewed)) {
                 analyzeAlignmentReviewedRoad(way, results,
                         connectedRoadCheck, addressCheck, nadAddressCheck,
+                        dualCarriageCheck,
                         connectedRoadCheckEnabled, addressCheckEnabled,
-                        nadCheckEnabled, stripTigerTags);
+                        nadCheckEnabled, dualCarriageCheckEnabled, stripTigerTags);
             } else if (tigerReviewed != null
                     && !TIGERReviewTest.VALID_REVIEWED_VALUES.contains(tigerReviewed)) {
                 analyzeInvalidReviewedValue(way, tigerReviewed, results);
@@ -288,10 +306,12 @@ public final class TIGERReviewAnalyzer {
             NodeVersionCheck nodeVersionCheck,
             AddressCheck addressCheck,
             NadAddressCheck nadAddressCheck,
+            DualCarriageCheck dualCarriageCheck,
             boolean connectedRoadCheckEnabled,
             boolean addressCheckEnabled,
             boolean nodeVersionCheckEnabled,
             boolean nadCheckEnabled,
+            boolean dualCarriageCheckEnabled,
             boolean stripTigerTags) {
         List<ReviewResult> results = new ArrayList<>();
 
@@ -299,17 +319,18 @@ public final class TIGERReviewAnalyzer {
         if ("no".equals(tigerReviewed)) {
             analyzeUnreviewedRoad(way, results,
                     connectedRoadCheck, nodeVersionCheck, addressCheck,
-                    nadAddressCheck,
+                    nadAddressCheck, dualCarriageCheck,
                     connectedRoadCheckEnabled, addressCheckEnabled,
                     nodeVersionCheckEnabled,
-                    nadCheckEnabled, stripTigerTags);
+                    nadCheckEnabled, dualCarriageCheckEnabled, stripTigerTags);
         } else if ("name".equals(tigerReviewed)) {
             analyzeNameReviewedRoad(way, results, nodeVersionCheck, stripTigerTags);
         } else if (isAlignmentReviewedValue(tigerReviewed)) {
             analyzeAlignmentReviewedRoad(way, results,
                     connectedRoadCheck, addressCheck, nadAddressCheck,
+                    dualCarriageCheck,
                     connectedRoadCheckEnabled, addressCheckEnabled,
-                    nadCheckEnabled, stripTigerTags);
+                    nadCheckEnabled, dualCarriageCheckEnabled, stripTigerTags);
         } else if (tigerReviewed != null
                 && !TIGERReviewTest.VALID_REVIEWED_VALUES.contains(tigerReviewed)) {
             analyzeInvalidReviewedValue(way, tigerReviewed, results);
@@ -361,9 +382,10 @@ public final class TIGERReviewAnalyzer {
         AddressCheck addressCheck = new AddressCheck(maxAddressDistance);
         NadAddressCheck nadAddressCheck = new NadAddressCheck(maxNadDistance);
 
+        // No dual carriageway check in single-way mode (requires spatial grid of all ways)
         return analyzeWay(way, connectedRoadCheck, nodeVersionCheck, addressCheck, nadAddressCheck,
-                connectedRoadCheckEnabled, addressCheckEnabled, nodeVersionCheckEnabled,
-                nadCheckEnabled, stripTigerTags);
+                null, connectedRoadCheckEnabled, addressCheckEnabled, nodeVersionCheckEnabled,
+                nadCheckEnabled, false, stripTigerTags);
     }
 
     private static void analyzeUnreviewedRoad(Way way, List<ReviewResult> results,
@@ -371,21 +393,24 @@ public final class TIGERReviewAnalyzer {
             NodeVersionCheck nodeVersionCheck,
             AddressCheck addressCheck,
             NadAddressCheck nadAddressCheck,
+            DualCarriageCheck dualCarriageCheck,
             boolean connectedRoadCheckEnabled,
             boolean addressCheckEnabled,
             boolean nodeVersionCheckEnabled,
             boolean nadCheckEnabled,
+            boolean dualCarriageCheckEnabled,
             boolean stripTigerTags) {
 
         String name = way.get("name");
         boolean hasName = name != null && !name.isEmpty();
 
-        // Gather name evidence (priority: user edit > etymology > address > NAD > connectivity)
+        // Gather name evidence (priority: user edit > etymology > address > NAD > connectivity > dual carriageway)
         ConnectionType connectionType = ConnectionType.NONE;
         boolean addressMatch = false;
         boolean nadMatch = false;
         boolean etymologyMatch = false;
         boolean userEditMatch = false;
+        boolean dualCarriageMatch = false;
         String nadMatchedName = null; // NAD street name (differs from OSM name for fuzzy matches)
         if (hasName) {
             userEditMatch = NameSnapshotTracker.getInstance().isNameModified(way);
@@ -402,6 +427,11 @@ public final class TIGERReviewAnalyzer {
             if (!userEditMatch && !etymologyMatch && !addressMatch && !nadMatch && connectedRoadCheckEnabled) {
                 connectionType = connectedRoadCheck.checkConnection(way, name);
             }
+            if (!userEditMatch && !etymologyMatch && !addressMatch && !nadMatch
+                    && connectionType == ConnectionType.NONE
+                    && dualCarriageCheckEnabled && dualCarriageCheck != null) {
+                dualCarriageMatch = dualCarriageCheck.isNameCorroborated(way, name);
+            }
         }
 
         // If road has a name but no evidence found from any source,
@@ -409,7 +439,7 @@ public final class TIGERReviewAnalyzer {
         String addressSuggestedName = null;
         String nadSuggestedName = null;
         if (hasName && !userEditMatch && !etymologyMatch && connectionType == ConnectionType.NONE
-                && !addressMatch && !nadMatch) {
+                && !addressMatch && !nadMatch && !dualCarriageMatch) {
             // Check OSM addr:street data first
             if (addressCheckEnabled) {
                 addressSuggestedName = addressCheck.findSuggestedName(way, name);
@@ -425,23 +455,23 @@ public final class TIGERReviewAnalyzer {
                 ? nodeVersionCheck.checkAlignment(way)
                 : new AlignmentResult(AlignmentEvidence.NONE, 0, 0);
         boolean nameCorroborated = connectionType != ConnectionType.NONE || addressMatch
-                || nadMatch || etymologyMatch || userEditMatch;
+                || nadMatch || etymologyMatch || userEditMatch || dualCarriageMatch;
 
         // Apply decision matrix
         if (hasName) {
             if (nameCorroborated && alignmentResult.isVerified()) {
                 String message = buildFullyVerifiedMessage(connectionType, addressMatch, nadMatch, etymologyMatch,
-                        userEditMatch, nadMatchedName, name, alignmentResult);
+                        userEditMatch, dualCarriageMatch, nadMatchedName, name, alignmentResult);
                 int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch,
-                        userEditMatch);
+                        userEditMatch, dualCarriageMatch);
                 results.add(new ReviewResult(way, code, message,
                         tr("Fully verified"),
                         FixAction.REMOVE_TAG, stripTigerTags));
             } else if (nameCorroborated) {
                 String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch,
-                        userEditMatch, nadMatchedName, name);
+                        userEditMatch, dualCarriageMatch, nadMatchedName, name);
                 int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch,
-                        userEditMatch);
+                        userEditMatch, dualCarriageMatch);
                 results.add(new ReviewResult(way, code, nameEvidence,
                         tr("Name verified, alignment needs review"),
                         FixAction.SET_NAME_REVIEWED, stripTigerTags));
@@ -498,9 +528,11 @@ public final class TIGERReviewAnalyzer {
             ConnectedRoadCheck connectedRoadCheck,
             AddressCheck addressCheck,
             NadAddressCheck nadAddressCheck,
+            DualCarriageCheck dualCarriageCheck,
             boolean connectedRoadCheckEnabled,
             boolean addressCheckEnabled,
             boolean nadCheckEnabled,
+            boolean dualCarriageCheckEnabled,
             boolean stripTigerTags) {
 
         String name = way.get("name");
@@ -513,12 +545,13 @@ public final class TIGERReviewAnalyzer {
             return;
         }
 
-        // Look for name corroboration (priority: user edit > etymology > address > NAD > connectivity)
+        // Look for name corroboration (priority: user edit > etymology > address > NAD > connectivity > dual carriageway)
         ConnectionType connectionType = ConnectionType.NONE;
         boolean addressMatch = false;
         boolean nadMatch = false;
         boolean etymologyMatch = false;
         boolean userEditMatch = false;
+        boolean dualCarriageMatch = false;
         String nadMatchedName = null;
 
         userEditMatch = NameSnapshotTracker.getInstance().isNameModified(way);
@@ -535,20 +568,26 @@ public final class TIGERReviewAnalyzer {
         if (!userEditMatch && !etymologyMatch && !addressMatch && !nadMatch && connectedRoadCheckEnabled) {
             connectionType = connectedRoadCheck.checkConnection(way, name);
         }
+        if (!userEditMatch && !etymologyMatch && !addressMatch && !nadMatch
+                && connectionType == ConnectionType.NONE
+                && dualCarriageCheckEnabled && dualCarriageCheck != null) {
+            dualCarriageMatch = dualCarriageCheck.isNameCorroborated(way, name);
+        }
 
         boolean nameCorroborated = etymologyMatch || addressMatch || nadMatch
-                || connectionType != ConnectionType.NONE || userEditMatch;
+                || connectionType != ConnectionType.NONE || userEditMatch || dualCarriageMatch;
 
         if (nameCorroborated) {
             // Name now corroborated + alignment already reviewed = fully verified
             String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch,
-                    userEditMatch, nadMatchedName, name);
-            int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch, userEditMatch);
+                    userEditMatch, dualCarriageMatch, nadMatchedName, name);
+            int code = getNameVerificationCode(connectionType, addressMatch, nadMatch, etymologyMatch,
+                    userEditMatch, dualCarriageMatch);
             results.add(new ReviewResult(way, code, nameEvidence,
                     tr("Fully verified"),
                     FixAction.REMOVE_TAG, stripTigerTags));
         } else if (!etymologyMatch && connectionType == ConnectionType.NONE
-                && !addressMatch && !nadMatch && !userEditMatch) {
+                && !addressMatch && !nadMatch && !userEditMatch && !dualCarriageMatch) {
             // No name evidence at all — check if nearby addresses suggest a different name
             String addrSuggestedName = addressCheckEnabled ? addressCheck.findSuggestedName(way, name) : null;
             String nadSuggestedName2 = nadCheckEnabled ? nadAddressCheck.findSuggestedName(way, name) : null;
@@ -675,7 +714,8 @@ public final class TIGERReviewAnalyzer {
     // --- Message building utilities ---
 
     static String buildNameEvidenceMessage(ConnectionType connectionType, boolean addressMatch, boolean nadMatch,
-            boolean etymologyMatch, boolean userEditMatch, String nadMatchedName, String osmName) {
+            boolean etymologyMatch, boolean userEditMatch, boolean dualCarriageMatch,
+            String nadMatchedName, String osmName) {
         if (userEditMatch) {
             return tr("name modified by user");
         } else if (etymologyMatch) {
@@ -688,6 +728,8 @@ public final class TIGERReviewAnalyzer {
             return tr("connected roads at both ends");
         } else if (connectionType == ConnectionType.ONE_END) {
             return tr("connected road");
+        } else if (dualCarriageMatch) {
+            return tr("parallel carriageway");
         }
         return "";
     }
@@ -706,8 +748,10 @@ public final class TIGERReviewAnalyzer {
 
     static String buildFullyVerifiedMessage(ConnectionType connectionType,
             boolean addressMatch, boolean nadMatch, boolean etymologyMatch,
-            boolean userEditMatch, String nadMatchedName, String osmName, AlignmentResult alignmentResult) {
-        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch, userEditMatch, nadMatchedName, osmName);
+            boolean userEditMatch, boolean dualCarriageMatch,
+            String nadMatchedName, String osmName, AlignmentResult alignmentResult) {
+        String nameEvidence = buildNameEvidenceMessage(connectionType, addressMatch, nadMatch, etymologyMatch,
+                userEditMatch, dualCarriageMatch, nadMatchedName, osmName);
         String alignmentEvidence = buildAlignmentEvidenceMessage(alignmentResult);
         return tr("name: {0}, alignment: {1}", nameEvidence, alignmentEvidence);
     }
@@ -739,7 +783,7 @@ public final class TIGERReviewAnalyzer {
     }
 
     static int getNameVerificationCode(ConnectionType connectionType, boolean addressMatch, boolean nadMatch,
-            boolean etymologyMatch, boolean userEditMatch) {
+            boolean etymologyMatch, boolean userEditMatch, boolean dualCarriageMatch) {
         if (userEditMatch) {
             return TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT;
         } else if (etymologyMatch) {
@@ -752,6 +796,8 @@ public final class TIGERReviewAnalyzer {
             return TIGERReviewTest.TIGER_NAME_VERIFIED_BOTH_ENDS;
         } else if (connectionType == ConnectionType.ONE_END) {
             return TIGERReviewTest.TIGER_NAME_VERIFIED_ONE_END;
+        } else if (dualCarriageMatch) {
+            return TIGERReviewTest.TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY;
         }
         return TIGERReviewTest.TIGER_NAME_VERIFIED;
     }
@@ -766,7 +812,8 @@ public final class TIGERReviewAnalyzer {
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY
-                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT) {
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY) {
             // These codes are used for both fully verified and name-only results,
             // so we rely on the groupMessage field instead
             return null;

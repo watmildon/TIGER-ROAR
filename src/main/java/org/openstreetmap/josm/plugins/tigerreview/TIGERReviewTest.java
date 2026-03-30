@@ -18,6 +18,7 @@ import org.openstreetmap.josm.data.validation.TestError;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
 import org.openstreetmap.josm.plugins.tigerreview.checks.AddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.ConnectedRoadCheck;
+import org.openstreetmap.josm.plugins.tigerreview.checks.DualCarriageCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NadAddressCheck;
 import org.openstreetmap.josm.plugins.tigerreview.checks.NodeVersionCheck;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -97,6 +98,9 @@ public class TIGERReviewTest extends Test {
     /** Both NAD and OSM addr:street agree on a directional prefix/suffix addition */
     public static final int TIGER_COMBINED_DIRECTIONAL_SUGGESTION = CODE_PREFIX + 23;
 
+    /** Name verified via nearby parallel carriageway (dual carriageway corroboration) */
+    public static final int TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY = CODE_PREFIX + 24;
+
     /** Accepted values for tiger:reviewed (no error triggered).
      *  "yes", "position", and "alignment" are legacy but not flagged as errors. */
     public static final Set<String> VALID_REVIEWED_VALUES = Collections.unmodifiableSet(
@@ -112,12 +116,14 @@ public class TIGERReviewTest extends Test {
     private NodeVersionCheck nodeVersionCheck;
     private AddressCheck addressCheck;
     private NadAddressCheck nadAddressCheck;
+    private DualCarriageCheck dualCarriageCheck;
 
     // Check enable flags
     private boolean connectedRoadCheckEnabled;
     private boolean addressCheckEnabled;
     private boolean nodeVersionCheckEnabled;
     private boolean nadCheckEnabled;
+    private boolean dualCarriageCheckEnabled;
     private boolean stripTigerTags;
     private boolean addressesAssigned;
 
@@ -138,6 +144,8 @@ public class TIGERReviewTest extends Test {
                 TIGERReviewPreferences.PREF_ENABLE_NODE_VERSION_CHECK, true);
         nadCheckEnabled = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
+        dualCarriageCheckEnabled = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_ENABLE_DUAL_CARRIAGE_CHECK, true);
         stripTigerTags = Config.getPref().getBoolean(
                 TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
 
@@ -184,7 +192,7 @@ public class TIGERReviewTest extends Test {
             return;
         }
 
-        // Lazy address assignment on first visit
+        // Lazy address and dual carriageway index assignment on first visit
         if (!addressesAssigned && way.getDataSet() != null) {
             List<Way> candidateWays = way.getDataSet().getWays().stream()
                     .filter(Way::isUsable)
@@ -198,18 +206,35 @@ public class TIGERReviewTest extends Test {
             if (nadCheckEnabled) {
                 nadAddressCheck.assignAddressesToRoads(candidateWays, roadGrid);
             }
+            if (dualCarriageCheckEnabled) {
+                List<Way> onewayWays = candidateWays.stream()
+                        .filter(DualCarriageCheck::isOneway)
+                        .collect(Collectors.toList());
+                double maxDualCarriageDistance = Config.getPref().getDouble(
+                        TIGERReviewPreferences.PREF_DUAL_CARRIAGE_MAX_DISTANCE,
+                        TIGERReviewPreferences.DEFAULT_DUAL_CARRIAGE_MAX_DISTANCE);
+                var onewayGrid = SpatialUtils.buildRoadSegmentGrid(onewayWays);
+                dualCarriageCheck = new DualCarriageCheck(onewayGrid, maxDualCarriageDistance);
+            }
             addressesAssigned = true;
         }
 
         List<ReviewResult> results = TIGERReviewAnalyzer.analyzeWay(way,
                 connectedRoadCheck, nodeVersionCheck, addressCheck,
-                nadAddressCheck,
+                nadAddressCheck, dualCarriageCheck,
                 connectedRoadCheckEnabled, addressCheckEnabled,
                 nodeVersionCheckEnabled,
-                nadCheckEnabled, stripTigerTags);
+                nadCheckEnabled, dualCarriageCheckEnabled, stripTigerTags);
 
         for (ReviewResult result : results) {
-            errors.add(toTestError(result));
+            // Only emit high-value warnings in the validator:
+            // fully verified (REMOVE_TAG) and residual tiger:* tags.
+            // Other results (name-only, alignment-only, suggestions) are
+            // available in the TIGER ROAR side panel but too noisy for the validator.
+            if (result.getCode() == TIGER_RESIDUAL_TAGS
+                    || result.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+                errors.add(toTestError(result));
+            }
         }
     }
 

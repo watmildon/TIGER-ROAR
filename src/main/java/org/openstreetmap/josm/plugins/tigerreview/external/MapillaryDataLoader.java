@@ -50,6 +50,11 @@ public class MapillaryDataLoader extends AbstractExternalDataLoader {
     }
 
     @Override
+    protected boolean isCacheReady() {
+        return MapillaryDataCache.getInstance().isReady();
+    }
+
+    @Override
     protected void clearCache() {
         MapillaryDataCache.getInstance().clear();
     }

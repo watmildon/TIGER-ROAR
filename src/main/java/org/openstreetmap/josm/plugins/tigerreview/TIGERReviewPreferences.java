@@ -56,6 +56,15 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for minimum node ID to consider post-TIGER (in billions) */
     public static final String PREF_NODE_MIN_POST_TIGER_ID = "tigerreview.node.minPostTigerId";
 
+    /** Preference key for enabling dual carriageway name corroboration check */
+    public static final String PREF_ENABLE_DUAL_CARRIAGE_CHECK = "tigerreview.check.dualCarriageway";
+
+    /** Preference key for dual carriageway maximum lateral distance */
+    public static final String PREF_DUAL_CARRIAGE_MAX_DISTANCE = "tigerreview.dualCarriageway.maxDistance";
+
+    /** Default maximum lateral distance for dual carriageway matching (meters) */
+    public static final double DEFAULT_DUAL_CARRIAGE_MAX_DISTANCE = 30.0;
+
     /** Preference key for stripping all tiger:* tags on fully verified roads */
     public static final String PREF_STRIP_TIGER_TAGS = "tigerreview.fix.stripTigerTags";
 
@@ -98,12 +107,14 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JSpinner nodePercentageSpinner;
     private JSpinner nadDistanceSpinner;
     private JCheckBox connectedRoadCheckBox;
+    private JCheckBox dualCarriageCheckBox;
     private JCheckBox addressCheckBox;
     private JCheckBox nodeVersionCheckBox;
     private JCheckBox nadCheckBox;
     private JCheckBox stripTigerTagsCheckBox;
     private JTextField additionalBotUsernamesField;
     private JSpinner postTigerIdSpinner;
+    private JSpinner dualCarriageDistanceSpinner;
     private JCheckBox mapillaryCheckBox;
     private JCheckBox mapillarySpeedCheckBox;
     private JTextField mapillaryApiKeyField;
@@ -162,6 +173,22 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 tr("NAD matching distance (m):"), nadDistanceSpinner,
                 tr("(default: {0})", DEFAULT_NAD_MAX_DISTANCE),
                 tr("Maximum distance to search for corroborating NAD addresses"));
+
+        dualCarriageCheckBox = new JCheckBox(tr("Dual carriageway check"));
+        dualCarriageCheckBox.setToolTipText(
+                tr("Corroborate road names using nearby parallel oneway roads (divided highways)"));
+        dualCarriageCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_DUAL_CARRIAGE_CHECK, true));
+        addCheckBox(namePanel, gbc, row++, dualCarriageCheckBox);
+
+        double currentDualCarriageDistance = Config.getPref().getDouble(
+                PREF_DUAL_CARRIAGE_MAX_DISTANCE, DEFAULT_DUAL_CARRIAGE_MAX_DISTANCE);
+        dualCarriageDistanceSpinner = new JSpinner(
+                new SpinnerNumberModel(currentDualCarriageDistance, 5.0, 100.0, 5.0));
+        dualCarriageDistanceSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
+        addLabeledRow(namePanel, gbc, row++,
+                tr("Dual carriageway distance (m):"), dualCarriageDistanceSpinner,
+                tr("(default: {0})", DEFAULT_DUAL_CARRIAGE_MAX_DISTANCE),
+                tr("Maximum lateral distance between parallel carriageways for name corroboration"));
 
         outerGbc.gridy = 0;
         outerPanel.add(namePanel, outerGbc);
@@ -344,6 +371,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putBoolean(PREF_ENABLE_ADDRESS_CHECK, addressCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_NODE_VERSION_CHECK, nodeVersionCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_NAD_CHECK, nadCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_ENABLE_DUAL_CARRIAGE_CHECK, dualCarriageCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_STRIP_TIGER_TAGS, stripTigerTagsCheckBox.isSelected());
 
         // Save parameter settings
@@ -352,6 +380,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         // Convert percentage (0-100) back to decimal (0.0-1.0) for storage
         Config.getPref().putDouble(PREF_NODE_MIN_PERCENTAGE_EDITED, (Double) nodePercentageSpinner.getValue() / 100.0);
         Config.getPref().putDouble(PREF_NAD_MAX_DISTANCE, (Double) nadDistanceSpinner.getValue());
+        Config.getPref().putDouble(PREF_DUAL_CARRIAGE_MAX_DISTANCE, (Double) dualCarriageDistanceSpinner.getValue());
         Config.getPref().put(PREF_ADDITIONAL_BOT_USERNAMES, additionalBotUsernamesField.getText().trim());
         Config.getPref().putDouble(PREF_NODE_MIN_POST_TIGER_ID, (Double) postTigerIdSpinner.getValue());
 

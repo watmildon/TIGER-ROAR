@@ -49,6 +49,11 @@ public class NadDataLoader extends AbstractExternalDataLoader {
     }
 
     @Override
+    protected boolean isCacheReady() {
+        return NadDataCache.getInstance().isReady();
+    }
+
+    @Override
     protected void clearCache() {
         NadDataCache.getInstance().clear();
     }

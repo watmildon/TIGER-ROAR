@@ -104,12 +104,12 @@ public final class SurfaceAnalyzer {
     }
 
     /**
-     * Check if a way is a bridge structure ({@code man_made=bridge}).
-     * Bridge structures commonly have a different surface material than
-     * the roads they carry, so surface should not propagate across them.
+     * Check if a way is a bridge ({@code bridge=*} or {@code man_made=bridge}).
+     * Bridges commonly have a different surface material than the roads
+     * approaching them, so surface should not propagate from, through, or to them.
      */
-    private static boolean isBridgeStructure(Way way) {
-        return "bridge".equals(way.get("man_made"));
+    private static boolean isBridge(Way way) {
+        return way.hasKey("bridge") || "bridge".equals(way.get("man_made"));
     }
 
     /**
@@ -131,7 +131,7 @@ public final class SurfaceAnalyzer {
      * @return a suggestion, or null if no suggestion
      */
     public static SurfaceSuggestion analyzeWay(Way way, SurfaceCheck surfaceCheck) {
-        if (!needsSurface(way)) {
+        if (!needsSurface(way) || isBridge(way)) {
             return null;
         }
 
@@ -168,7 +168,7 @@ public final class SurfaceAnalyzer {
     private static SurfaceSuggestion checkImmediateNeighbors(Way way, SurfaceCheck surfaceCheck) {
         String name = way.get("name");
         String highway = way.get("highway");
-        if (name == null || highway == null || isBridgeStructure(way)) {
+        if (name == null || highway == null || isBridge(way)) {
             return null;
         }
 
@@ -178,7 +178,7 @@ public final class SurfaceAnalyzer {
         for (Node node : way.getNodes()) {
             for (OsmPrimitive referrer : node.getReferrers()) {
                 if (!(referrer instanceof Way neighbor) || neighbor == way
-                        || !neighbor.isUsable() || isBridgeStructure(neighbor)) {
+                        || !neighbor.isUsable() || isBridge(neighbor)) {
                     continue;
                 }
                 if (!name.equals(neighbor.get("name"))
@@ -319,10 +319,10 @@ public final class SurfaceAnalyzer {
      */
     private static void analyzeConnectedRoads(DataSet dataSet, SurfaceCheck surfaceCheck,
                                                Map<Way, SurfaceSuggestion> results) {
-        // Collect all eligible named highway ways (excluding bridge structures)
+        // Collect all eligible named highway ways (excluding bridges)
         Set<Way> allEligible = new HashSet<>();
         for (Way way : dataSet.getWays()) {
-            if (isEligible(way) && !isBridgeStructure(way)
+            if (isEligible(way) && !isBridge(way)
                     && way.get("name") != null && way.get("highway") != null) {
                 allEligible.add(way);
             }
@@ -444,7 +444,7 @@ public final class SurfaceAnalyzer {
             if (results.containsKey(way)) {
                 continue;  // Already has a result from Rule 1
             }
-            if (!isEligible(way)) {
+            if (!isEligible(way) || isBridge(way)) {
                 continue;
             }
 
@@ -578,7 +578,7 @@ public final class SurfaceAnalyzer {
             if (results.containsKey(way)) {
                 continue;  // Already has a result from Rule 1
             }
-            if (!isEligible(way) || !"service".equals(way.get("highway"))) {
+            if (!isEligible(way) || isBridge(way) || !"service".equals(way.get("highway"))) {
                 continue;
             }
 
@@ -604,7 +604,7 @@ public final class SurfaceAnalyzer {
             if (results.containsKey(way)) {
                 continue;  // Already has a result from Rule 1 or 3
             }
-            if (!isEligible(way)) {
+            if (!isEligible(way) || isBridge(way)) {
                 continue;
             }
 

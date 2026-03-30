@@ -1,5 +1,5 @@
 # TIGER-ROAR Result Snapshot
-# Total warnings: 91
+# Total warnings: 89
 
 way=17574004 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
 way=17574008 code=19939005 fix=REMOVE_TAG msg="all nodes edited"
@@ -24,9 +24,7 @@ way=17584210 code=19939017 fix=SUGGEST_NAME msg="South Chippewa Street"
 way=17584212 code=19939013 fix=REMOVE_TAG msg="name: NAD address data, alignment: all nodes edited"
 way=17584283 code=19939010 fix=REMOVE_TAG msg="name: nearby addr:street, alignment: all nodes edited"
 way=17584910 code=19939010 fix=REMOVE_TAG msg="name: nearby addr:street, alignment: all nodes edited"
-way=17585417 code=10496673 fix=none msg="Connected same-name roads have conflicting surfaces"
 way=17585417 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="all nodes edited"
-way=17585420 code=10496673 fix=none msg="Connected same-name roads have conflicting surfaces"
 way=17585420 code=19939003 fix=SET_ALIGNMENT_REVIEWED msg="all nodes edited"
 way=17585422 code=19939013 fix=REMOVE_TAG msg="name: NAD address data, alignment: all nodes edited"
 way=17585694 code=19939010 fix=REMOVE_TAG msg="name: nearby addr:street, alignment: all nodes edited"

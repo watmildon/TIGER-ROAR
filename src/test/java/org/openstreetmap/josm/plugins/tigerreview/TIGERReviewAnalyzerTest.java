@@ -28,6 +28,7 @@ class TIGERReviewAnalyzerTest {
 
     private static DataSet tigerTestData;
     private static DataSet comprehensiveTestData;
+    private static DataSet dualCarriagewayTestData;
 
     @BeforeAll
     static void loadTestData() {
@@ -36,10 +37,12 @@ class TIGERReviewAnalyzerTest {
         Config.getPref().putBoolean(TIGERReviewPreferences.PREF_ENABLE_ADDRESS_CHECK, true);
         Config.getPref().putBoolean(TIGERReviewPreferences.PREF_ENABLE_NODE_VERSION_CHECK, true);
         Config.getPref().putBoolean(TIGERReviewPreferences.PREF_ENABLE_NAD_CHECK, false);
+        Config.getPref().putBoolean(TIGERReviewPreferences.PREF_ENABLE_DUAL_CARRIAGE_CHECK, true);
         Config.getPref().putBoolean(TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
 
         tigerTestData = JosmTestSetup.loadDataSetWithCaches("tiger-review-test.osm");
         comprehensiveTestData = JosmTestSetup.loadDataSetWithCaches("test-data-comprehensive.osm");
+        dualCarriagewayTestData = JosmTestSetup.loadDataSetWithCaches("test-data-dual-carriageway.osm");
     }
 
     @AfterAll
@@ -208,6 +211,66 @@ class TIGERReviewAnalyzerTest {
 
         String diff = ResultSnapshot.diff(s1, s2);
         assertTrue(diff.isEmpty(), "Identical snapshots should produce empty diff, got: " + diff);
+    }
+
+    // --- Dual carriageway tests ---
+
+    @Test
+    void testDualCarriageCorroborationWithReviewedParallel() {
+        Map<String, ReviewResult> map = buildResultMap(dualCarriagewayTestData);
+        // DC1a: parallel oneway, one reviewed → corroboration fires
+        assertContainsCode(map, "DC1a",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY);
+        assertEquals(FixAction.SET_NAME_REVIEWED, map.get("DC1a").getFixAction(),
+                "DC1a: name corroborated via dual carriageway, no alignment → SET_NAME_REVIEWED");
+    }
+
+    @Test
+    void testDualCarriageNoCorroborationBothUnreviewed() {
+        Map<String, ReviewResult> map = buildResultMap(dualCarriagewayTestData);
+        // DC2a: both unreviewed → no corroboration
+        assertNull(map.get("DC2a"),
+                "DC2a: both unreviewed parallel roads should not corroborate each other");
+    }
+
+    @Test
+    void testDualCarriageNoCorroborationDifferentNames() {
+        Map<String, ReviewResult> map = buildResultMap(dualCarriagewayTestData);
+        // DC3a: different names → no corroboration
+        assertNull(map.get("DC3a"),
+                "DC3a: parallel roads with different names should not corroborate");
+    }
+
+    @Test
+    void testDualCarriageNoCorroborationNotOneway() {
+        Map<String, ReviewResult> map = buildResultMap(dualCarriagewayTestData);
+        // DC4a: target not oneway → dual carriageway check does not apply
+        assertNull(map.get("DC4a"),
+                "DC4a: non-oneway road should not use dual carriageway corroboration");
+    }
+
+    @Test
+    void testDualCarriageNoCorroborationAlignmentOnly() {
+        Map<String, ReviewResult> map = buildResultMap(dualCarriagewayTestData);
+        // DC5a: parallel road has tiger:reviewed=alignment → does not prove name
+        assertNull(map.get("DC5a"),
+                "DC5a: alignment-only reviewed parallel road should not corroborate name");
+    }
+
+    @Test
+    void testDualCarriageCorroborationWithNameReviewed() {
+        Map<String, ReviewResult> map = buildResultMap(dualCarriagewayTestData);
+        // DC6a: parallel road has tiger:reviewed=name → corroboration fires
+        assertContainsCode(map, "DC6a",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY);
+    }
+
+    @Test
+    void testDualCarriageCorroborationMotorway() {
+        Map<String, ReviewResult> map = buildResultMap(dualCarriagewayTestData);
+        // DC7a: motorway implies oneway → corroboration fires
+        assertContainsCode(map, "DC7a",
+                TIGERReviewTest.TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY);
     }
 
     // --- Helpers ---

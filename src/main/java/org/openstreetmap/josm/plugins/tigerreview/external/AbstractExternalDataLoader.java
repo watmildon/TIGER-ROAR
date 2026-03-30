@@ -85,6 +85,11 @@ public abstract class AbstractExternalDataLoader implements LayerManager.LayerCh
             return;
         }
 
+        if (isCacheReady()) {
+            Logging.debug(getLoaderName() + " cache already loaded, skipping reload on layer add");
+            return;
+        }
+
         DataSet dataSet = layer.getDataSet();
         if (dataSet == null) {
             return;
@@ -236,6 +241,9 @@ public abstract class AbstractExternalDataLoader implements LayerManager.LayerCh
 
     /** Whether this loader is enabled in preferences. */
     protected abstract boolean isEnabled();
+
+    /** Whether the associated cache already has data loaded. */
+    protected abstract boolean isCacheReady();
 
     /** Clear the associated cache. */
     protected abstract void clearCache();
