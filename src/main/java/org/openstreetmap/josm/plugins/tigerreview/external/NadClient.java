@@ -73,18 +73,35 @@ public class NadClient {
     }
 
     /**
+     * Query NAD addresses for a single tile.
+     * Tile bounds are small enough that the area check is skipped.
+     *
+     * @param tileKey The tile to fetch
+     * @return Query result containing addresses or error
+     */
+    public NadQueryResult queryTile(NadTileKey tileKey) {
+        return queryAddresses(tileKey.toBounds(), false);
+    }
+
+    /**
      * Query NAD addresses within the given bounds.
      *
      * @param bounds The geographic bounds to query
      * @return Query result containing addresses or error
      */
     public NadQueryResult queryAddresses(Bounds bounds) {
+        return queryAddresses(bounds, true);
+    }
+
+    private NadQueryResult queryAddresses(Bounds bounds, boolean checkArea) {
         // Check if area is too large
-        double area = bounds.getArea();
-        if (area > MAX_AREA_DEGREES) {
-            return NadQueryResult.error(
-                    String.format("Area too large for NAD query (%.4f sq degrees > %.4f max). " +
-                            "Download a smaller area.", area, MAX_AREA_DEGREES));
+        if (checkArea) {
+            double area = bounds.getArea();
+            if (area > MAX_AREA_DEGREES) {
+                return NadQueryResult.error(
+                        String.format("Area too large for NAD query (%.4f sq degrees > %.4f max). " +
+                                "Download a smaller area.", area, MAX_AREA_DEGREES));
+            }
         }
 
         List<NadAddress> allAddresses = new ArrayList<>();
