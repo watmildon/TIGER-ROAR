@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 
 import javax.swing.AbstractAction;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTree;
 import javax.swing.SwingWorker;
@@ -33,6 +34,7 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 
 import org.openstreetmap.josm.actions.AutoScaleAction;
+import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -50,6 +52,7 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
+import org.openstreetmap.josm.plugins.tigerreview.AlignmentAnalyzer.AlignmentResult;
 import org.openstreetmap.josm.plugins.tigerreview.SpeedLimitAnalyzer.SpeedLimitSuggestion;
 import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
 import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataCache;
@@ -85,9 +88,15 @@ public class TIGERReviewDialog extends ToggleDialog
     private final DefaultMutableTreeNode speedLimitRoot;
     private final JTree speedLimitTree;
 
+    // Alignment tab
+    private final DefaultMutableTreeNode alignmentRoot;
+    private final JTree alignmentTree;
+    private final AlignmentTaggingPanel taggingPanel;
+
     private List<ReviewResult> tigerResults = new ArrayList<>();
     private List<SurfaceSuggestion> surfaceResults = new ArrayList<>();
     private List<SpeedLimitSuggestion> speedLimitResults = new ArrayList<>();
+    private List<AlignmentResult> alignmentResults = new ArrayList<>();
 
     private final AbstractAction analyzeAction;
     private final AbstractAction fixAction;
@@ -97,6 +106,16 @@ public class TIGERReviewDialog extends ToggleDialog
 
     /** Track running analysis to avoid concurrent runs */
     private SwingWorker<Void, Void> currentWorker;
+
+    /**
+     * After a fix-then-reanalyze cycle, the leaf index to select in the active tab.
+     * -1 means no pending selection (normal analyze). The index refers to a flat
+     * enumeration of leaf nodes across all category groups in the active tree.
+     */
+    private int pendingLeafIndex = -1;
+
+    /** Which tab index the pending selection targets (so we select in the right tree). */
+    private int pendingTabIndex = -1;
 
     public TIGERReviewDialog() {
         super(
@@ -123,11 +142,23 @@ public class TIGERReviewDialog extends ToggleDialog
         speedLimitRoot = new DefaultMutableTreeNode("Results");
         speedLimitTree = createResultTree(speedLimitRoot);
 
+        // --- Alignment tree + tagging panel ---
+        alignmentRoot = new DefaultMutableTreeNode("Results");
+        alignmentTree = createResultTree(alignmentRoot);
+        taggingPanel = new AlignmentTaggingPanel();
+        taggingPanel.setApplyCallback(tags -> applyAlignmentTagsAndFix(tags));
+
+        JSplitPane alignmentSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
+                new JScrollPane(alignmentTree), taggingPanel);
+        alignmentSplit.setResizeWeight(1.0); // tree gets extra space
+        alignmentSplit.setDividerSize(4);
+
         // --- Tabbed pane ---
         tabbedPane = new JTabbedPane();
         tabbedPane.addTab(tr("TIGER Review"), new JScrollPane(tigerTree));
         tabbedPane.addTab(tr("Surface"), new JScrollPane(surfaceTree));
         tabbedPane.addTab(tr("Speed Limit"), new JScrollPane(speedLimitTree));
+        tabbedPane.addTab(tr("Alignment"), alignmentSplit);
         tabbedPane.addChangeListener(e -> updateButtonState());
 
         // --- Actions ---
@@ -212,6 +243,7 @@ public class TIGERReviewDialog extends ToggleDialog
         return switch (tabbedPane.getSelectedIndex()) {
             case 1 -> surfaceTree;
             case 2 -> speedLimitTree;
+            case 3 -> alignmentTree;
             default -> tigerTree;
         };
     }
@@ -220,6 +252,7 @@ public class TIGERReviewDialog extends ToggleDialog
         return switch (tabbedPane.getSelectedIndex()) {
             case 1 -> surfaceRoot;
             case 2 -> speedLimitRoot;
+            case 3 -> alignmentRoot;
             default -> tigerRoot;
         };
     }
@@ -228,12 +261,14 @@ public class TIGERReviewDialog extends ToggleDialog
         return switch (tabbedPane.getSelectedIndex()) {
             case 1 -> surfaceResults;
             case 2 -> speedLimitResults;
+            case 3 -> alignmentResults;
             default -> tigerResults;
         };
     }
 
     private boolean hasAnyResults() {
-        return !tigerResults.isEmpty() || !surfaceResults.isEmpty() || !speedLimitResults.isEmpty();
+        return !tigerResults.isEmpty() || !surfaceResults.isEmpty()
+                || !speedLimitResults.isEmpty() || !alignmentResults.isEmpty();
     }
 
     // --- Analysis ---
@@ -260,6 +295,7 @@ public class TIGERReviewDialog extends ToggleDialog
             private List<ReviewResult> tigerRes;
             private List<SurfaceSuggestion> surfaceRes;
             private List<SpeedLimitSuggestion> speedLimitRes;
+            private List<AlignmentResult> alignmentRes;
             private long analysisMs;
 
             @Override
@@ -284,6 +320,9 @@ public class TIGERReviewDialog extends ToggleDialog
                 SpeedLimitAnalyzer.SpeedLimitAnalysisResult speedLimitAnalysis =
                         SpeedLimitAnalyzer.analyzeAllTimed(ds);
                 speedLimitRes = speedLimitAnalysis.getResults();
+                AlignmentAnalyzer.AlignmentAnalysisResult alignmentAnalysis =
+                        AlignmentAnalyzer.analyzeAllTimed(ds);
+                alignmentRes = alignmentAnalysis.getResults();
                 analysisMs = (System.nanoTime() - startTime) / 1_000_000;
                 return null;
             }
@@ -295,9 +334,12 @@ public class TIGERReviewDialog extends ToggleDialog
                         tigerResults = tigerRes;
                         surfaceResults = surfaceRes;
                         speedLimitResults = speedLimitRes;
+                        alignmentResults = alignmentRes;
                         rebuildTrees();
+                        applyPendingSelection();
                         setTitle(buildTitle(
-                                tigerResults.size() + surfaceResults.size() + speedLimitResults.size(),
+                                tigerResults.size() + surfaceResults.size()
+                                        + speedLimitResults.size() + alignmentResults.size(),
                                 analysisMs));
                     }
                 } catch (Exception ex) {
@@ -316,6 +358,7 @@ public class TIGERReviewDialog extends ToggleDialog
         tigerResults = new ArrayList<>();
         surfaceResults = new ArrayList<>();
         speedLimitResults = new ArrayList<>();
+        alignmentResults = new ArrayList<>();
         rebuildTrees();
         setTitle(tr("TIGER ROAR"));
         updateButtonState();
@@ -330,6 +373,7 @@ public class TIGERReviewDialog extends ToggleDialog
         rebuildSingleTree(tigerRoot, tigerTree, tigerResults);
         rebuildSingleTree(surfaceRoot, surfaceTree, surfaceResults);
         rebuildSingleTree(speedLimitRoot, speedLimitTree, speedLimitResults);
+        rebuildSingleTree(alignmentRoot, alignmentTree, alignmentResults);
         updateTabTitles();
     }
 
@@ -404,6 +448,7 @@ public class TIGERReviewDialog extends ToggleDialog
         tabbedPane.setTitleAt(0, tr("TIGER Review ({0})", tigerResults.size()));
         tabbedPane.setTitleAt(1, tr("Surface ({0})", surfaceResults.size()));
         tabbedPane.setTitleAt(2, tr("Speed Limit ({0})", speedLimitResults.size()));
+        tabbedPane.setTitleAt(3, tr("Alignment ({0})", alignmentResults.size()));
     }
 
     /**
@@ -481,6 +526,11 @@ public class TIGERReviewDialog extends ToggleDialog
         if (code == SpeedLimitTest.SPEED_CONFLICT_MULTI_SIGN) return 2;
         if (code == SpeedLimitTest.SPEED_CONFLICT) return 3;
 
+        // --- Alignment tab ---
+
+        if (code == AlignmentAnalyzer.ALIGNMENT_NAME_REVIEWED) return 0;
+        if (code == AlignmentAnalyzer.ALIGNMENT_UNNAMED_UNREVIEWED) return 1;
+
         return 99;
     }
 
@@ -488,9 +538,11 @@ public class TIGERReviewDialog extends ToggleDialog
 
     /**
      * Fix selected items in the active tab. If a category node is selected, fix all its children.
+     * After fixing and re-analyzing, selects the next item after the fixed ones.
      */
     private void fixSelected() {
-        List<TreeDisplayable> toFix = getSelectedResultsFromTree(getActiveTree());
+        JTree activeTree = getActiveTree();
+        List<TreeDisplayable> toFix = getSelectedResultsFromTree(activeTree);
         if (toFix.isEmpty()) return;
 
         // If selection spans multiple categories, confirm with the user
@@ -510,7 +562,122 @@ public class TIGERReviewDialog extends ToggleDialog
             }
         }
 
+        // Compute the next leaf index to select after fix + re-analyze
+        pendingLeafIndex = computeNextLeafIndex(activeTree, getActiveRoot(), toFix);
+        pendingTabIndex = tabbedPane.getSelectedIndex();
+
+        // Alignment tab: also apply any selected surface/lanes tags
+        if (tabbedPane.getSelectedIndex() == 3) {
+            applyAlignmentTagsAndFix(taggingPanel.getSelectedTags());
+            return;
+        }
+
         applyFixes(toFix);
+    }
+
+    /**
+     * Find the flat leaf index of the first leaf node that comes after all
+     * selected/fixed items. If no such leaf exists, returns 0 (first item).
+     */
+    private int computeNextLeafIndex(JTree tree, DefaultMutableTreeNode root,
+                                      List<TreeDisplayable> fixedItems) {
+        Set<Way> fixedWays = new HashSet<>();
+        for (TreeDisplayable item : fixedItems) {
+            fixedWays.add(item.getWay());
+        }
+
+        int leafIndex = 0;
+        int maxFixedIndex = -1;
+
+        for (int i = 0; i < root.getChildCount(); i++) {
+            DefaultMutableTreeNode category = (DefaultMutableTreeNode) root.getChildAt(i);
+            for (int j = 0; j < category.getChildCount(); j++) {
+                DefaultMutableTreeNode leaf = (DefaultMutableTreeNode) category.getChildAt(j);
+                if (leaf.getUserObject() instanceof TreeDisplayable result
+                        && fixedWays.contains(result.getWay())) {
+                    maxFixedIndex = leafIndex;
+                }
+                leafIndex++;
+            }
+        }
+
+        // The next item after the last fixed one. Since the fixed items will be
+        // removed, the item that was at (maxFixedIndex + 1) will shift down by
+        // the number of fixed items at or before that position. But we don't know
+        // exactly how many will be removed (cascading, etc.), so we count how many
+        // non-fixed items precede the target position instead.
+        int targetOriginalIndex = maxFixedIndex + 1;
+        int nonFixedCount = 0;
+        leafIndex = 0;
+
+        for (int i = 0; i < root.getChildCount(); i++) {
+            DefaultMutableTreeNode category = (DefaultMutableTreeNode) root.getChildAt(i);
+            for (int j = 0; j < category.getChildCount(); j++) {
+                DefaultMutableTreeNode leaf = (DefaultMutableTreeNode) category.getChildAt(j);
+                boolean isFixed = leaf.getUserObject() instanceof TreeDisplayable result
+                        && fixedWays.contains(result.getWay());
+                if (!isFixed && leafIndex >= targetOriginalIndex) {
+                    // This is the first non-fixed leaf after the last fixed one
+                    return nonFixedCount;
+                }
+                if (!isFixed) {
+                    nonFixedCount++;
+                }
+                leafIndex++;
+            }
+        }
+
+        // All items after the last fixed one were also fixed; wrap to top
+        return 0;
+    }
+
+    /**
+     * Apply additional tags (surface, lanes, etc.) to selected alignment items,
+     * then remove tiger tags and advance to the next item.
+     * Called from the Fix button (via {@link #fixSelected()}) or from
+     * {@link AlignmentTaggingPanel} quick-tag buttons.
+     *
+     * @param tags map of tag key to value (empty map = fix only, no tag additions)
+     */
+    private void applyAlignmentTagsAndFix(Map<String, String> tags) {
+        List<TreeDisplayable> toFix = getSelectedResultsFromTree(alignmentTree);
+        if (toFix.isEmpty()) return;
+
+        boolean stripTigerTags = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
+
+        List<Command> allCommands = new ArrayList<>();
+        for (TreeDisplayable result : toFix) {
+            Way way = result.getWay();
+
+            // Apply the additional tags (surface, lanes, etc.)
+            for (Map.Entry<String, String> entry : tags.entrySet()) {
+                allCommands.add(new ChangePropertyCommand(way, entry.getKey(), entry.getValue()));
+            }
+
+            // Remove tiger tags (the alignment fix)
+            Command removeCmd = TIGERReviewAnalyzer.createRemoveTagCommand(way, stripTigerTags);
+            if (removeCmd != null) {
+                allCommands.add(removeCmd);
+            }
+        }
+
+        if (allCommands.isEmpty()) return;
+
+        // Set pending selection if not already set by fixSelected()
+        if (pendingLeafIndex < 0) {
+            pendingLeafIndex = computeNextLeafIndex(alignmentTree, alignmentRoot, toFix);
+            pendingTabIndex = 3;
+        }
+
+        // Record in MRU
+        taggingPanel.recordMru(tags);
+
+        Command combined = SequenceCommand.wrapIfNeeded(
+                tr("Alignment fix + tags ({0} roads)", toFix.size()), allCommands);
+        UndoRedoHandler.getInstance().add(combined);
+
+        analyze();
     }
 
     /**
@@ -806,6 +973,7 @@ public class TIGERReviewDialog extends ToggleDialog
                 tigerTree.clearSelection();
                 surfaceTree.clearSelection();
                 speedLimitTree.clearSelection();
+                alignmentTree.clearSelection();
                 return;
             }
 
@@ -814,9 +982,80 @@ public class TIGERReviewDialog extends ToggleDialog
             syncTreeSelection(tigerTree, tigerRoot, selectedWays, tigerTree == active);
             syncTreeSelection(surfaceTree, surfaceRoot, selectedWays, surfaceTree == active);
             syncTreeSelection(speedLimitTree, speedLimitRoot, selectedWays, speedLimitTree == active);
+            syncTreeSelection(alignmentTree, alignmentRoot, selectedWays, alignmentTree == active);
         } finally {
             updatingSelection = false;
         }
+    }
+
+    /**
+     * If a fix operation set a pending selection, apply it now and clear the pending state.
+     * This selects the next item in the tree, syncs the JOSM map selection, and zooms to it.
+     */
+    private void applyPendingSelection() {
+        if (pendingLeafIndex < 0) return;
+        int tabIdx = pendingTabIndex;
+        int leafIdx = pendingLeafIndex;
+        pendingLeafIndex = -1;
+        pendingTabIndex = -1;
+
+        JTree tree = switch (tabIdx) {
+            case 1 -> surfaceTree;
+            case 2 -> speedLimitTree;
+            case 3 -> alignmentTree;
+            default -> tigerTree;
+        };
+        DefaultMutableTreeNode root = switch (tabIdx) {
+            case 1 -> surfaceRoot;
+            case 2 -> speedLimitRoot;
+            case 3 -> alignmentRoot;
+            default -> tigerRoot;
+        };
+
+        // Select the leaf — this triggers the tree's selection listener which
+        // syncs the JOSM map selection (ds.setSelected). Do NOT guard with
+        // updatingSelection so the listener fires normally.
+        TreeDisplayable selected = selectLeafByIndex(tree, root, leafIdx);
+
+        // Zoom the map to the newly selected way
+        if (selected != null) {
+            AutoScaleAction.zoomTo(Collections.singleton(selected.getWay()));
+        }
+    }
+
+    /**
+     * Select the leaf node at the given flat index in a tree, and scroll to it.
+     * If the index is out of range, selects the first leaf (index 0).
+     *
+     * @return the selected TreeDisplayable, or null if the tree is empty
+     */
+    private TreeDisplayable selectLeafByIndex(JTree tree, DefaultMutableTreeNode root, int leafIndex) {
+        int current = 0;
+        DefaultMutableTreeNode firstLeaf = null;
+        for (int i = 0; i < root.getChildCount(); i++) {
+            DefaultMutableTreeNode category = (DefaultMutableTreeNode) root.getChildAt(i);
+            for (int j = 0; j < category.getChildCount(); j++) {
+                DefaultMutableTreeNode leaf = (DefaultMutableTreeNode) category.getChildAt(j);
+                if (firstLeaf == null) {
+                    firstLeaf = leaf;
+                }
+                if (current == leafIndex) {
+                    TreePath path = new TreePath(leaf.getPath());
+                    tree.setSelectionPath(path);
+                    tree.scrollPathToVisible(path);
+                    return leaf.getUserObject() instanceof TreeDisplayable td ? td : null;
+                }
+                current++;
+            }
+        }
+        // Index out of range — select first leaf
+        if (firstLeaf != null) {
+            TreePath path = new TreePath(firstLeaf.getPath());
+            tree.setSelectionPath(path);
+            tree.scrollPathToVisible(path);
+            return firstLeaf.getUserObject() instanceof TreeDisplayable td ? td : null;
+        }
+        return null;
     }
 
     private void syncTreeSelection(JTree tree, DefaultMutableTreeNode root,
