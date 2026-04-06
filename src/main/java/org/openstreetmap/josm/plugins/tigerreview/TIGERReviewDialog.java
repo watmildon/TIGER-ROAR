@@ -22,6 +22,8 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import javax.swing.AbstractAction;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
@@ -117,6 +119,14 @@ public class TIGERReviewDialog extends ToggleDialog
     /** Which tab index the pending selection targets (so we select in the right tree). */
     private int pendingTabIndex = -1;
 
+    /** Sort mode for the Alignment tab tree. */
+    enum AlignmentSortMode {
+        NAME, LENGTH, NODE_COUNT
+    }
+
+    private AlignmentSortMode alignmentSortMode = AlignmentSortMode.NAME;
+    private boolean alignmentSortReversed;
+
     public TIGERReviewDialog() {
         super(
             tr("TIGER ROAR"),
@@ -145,6 +155,7 @@ public class TIGERReviewDialog extends ToggleDialog
         // --- Alignment tree + tagging panel ---
         alignmentRoot = new DefaultMutableTreeNode("Results");
         alignmentTree = createResultTree(alignmentRoot);
+        alignmentTree.setComponentPopupMenu(createAlignmentSortMenu());
         taggingPanel = new AlignmentTaggingPanel();
         taggingPanel.setApplyCallback(tags -> applyAlignmentTagsAndFix(tags));
 
@@ -370,15 +381,16 @@ public class TIGERReviewDialog extends ToggleDialog
      * Rebuild both trees and update tab titles with counts.
      */
     private void rebuildTrees() {
-        rebuildSingleTree(tigerRoot, tigerTree, tigerResults);
-        rebuildSingleTree(surfaceRoot, surfaceTree, surfaceResults);
-        rebuildSingleTree(speedLimitRoot, speedLimitTree, speedLimitResults);
-        rebuildSingleTree(alignmentRoot, alignmentTree, alignmentResults);
+        rebuildSingleTree(tigerRoot, tigerTree, tigerResults, null);
+        rebuildSingleTree(surfaceRoot, surfaceTree, surfaceResults, null);
+        rebuildSingleTree(speedLimitRoot, speedLimitTree, speedLimitResults, null);
+        rebuildSingleTree(alignmentRoot, alignmentTree, alignmentResults, getAlignmentComparator());
         updateTabTitles();
     }
 
     private void rebuildSingleTree(DefaultMutableTreeNode root, JTree tree,
-            List<? extends TreeDisplayable> results) {
+            List<? extends TreeDisplayable> results,
+            java.util.Comparator<TreeDisplayable> customSort) {
         // Save expanded state of category nodes by group message
         Set<String> collapsedGroups = new HashSet<>();
         for (int i = 0; i < root.getChildCount(); i++) {
@@ -413,16 +425,20 @@ public class TIGERReviewDialog extends ToggleDialog
             DefaultMutableTreeNode categoryNode = new DefaultMutableTreeNode(
                     entry.getKey() + " (" + entry.getValue().size() + ")");
             List<TreeDisplayable> sorted = new ArrayList<>(entry.getValue());
-            sorted.sort((a, b) -> {
-                String nameA = a.getWay().get("name");
-                String nameB = b.getWay().get("name");
-                if (nameA != null && nameB != null) {
-                    return nameA.compareToIgnoreCase(nameB);
-                }
-                if (nameA != null) return -1;
-                if (nameB != null) return 1;
-                return Long.compare(a.getWay().getId(), b.getWay().getId());
-            });
+            if (customSort != null) {
+                sorted.sort(customSort);
+            } else {
+                sorted.sort((a, b) -> {
+                    String nameA = a.getWay().get("name");
+                    String nameB = b.getWay().get("name");
+                    if (nameA != null && nameB != null) {
+                        return nameA.compareToIgnoreCase(nameB);
+                    }
+                    if (nameA != null) return -1;
+                    if (nameB != null) return 1;
+                    return Long.compare(a.getWay().getId(), b.getWay().getId());
+                });
+            }
             for (TreeDisplayable result : sorted) {
                 categoryNode.add(new DefaultMutableTreeNode(result));
             }
@@ -445,10 +461,81 @@ public class TIGERReviewDialog extends ToggleDialog
     }
 
     private void updateTabTitles() {
+        String arrow = alignmentSortReversed ? "\u25BC" : "\u25B2";
+        String sortLabel = switch (alignmentSortMode) {
+            case LENGTH -> tr("length {0}", arrow);
+            case NODE_COUNT -> tr("nodes {0}", arrow);
+            default -> tr("name {0}", arrow);
+        };
         tabbedPane.setTitleAt(0, tr("TIGER Review ({0})", tigerResults.size()));
         tabbedPane.setTitleAt(1, tr("Surface ({0})", surfaceResults.size()));
         tabbedPane.setTitleAt(2, tr("Speed Limit ({0})", speedLimitResults.size()));
-        tabbedPane.setTitleAt(3, tr("Alignment ({0})", alignmentResults.size()));
+        tabbedPane.setTitleAt(3, tr("Alignment ({0}, {1})", alignmentResults.size(), sortLabel));
+    }
+
+    /**
+     * Build a comparator for the alignment tree based on the current sort mode and direction.
+     */
+    private java.util.Comparator<TreeDisplayable> getAlignmentComparator() {
+        java.util.Comparator<TreeDisplayable> cmp = switch (alignmentSortMode) {
+            case LENGTH -> (a, b) -> Double.compare(a.getWay().getLength(), b.getWay().getLength());
+            case NODE_COUNT -> (a, b) -> Integer.compare(a.getWay().getNodesCount(), b.getWay().getNodesCount());
+            default -> (a, b) -> {
+                String nameA = a.getWay().get("name");
+                String nameB = b.getWay().get("name");
+                if (nameA != null && nameB != null) {
+                    return nameA.compareToIgnoreCase(nameB);
+                }
+                if (nameA != null) return -1;
+                if (nameB != null) return 1;
+                return Long.compare(a.getWay().getId(), b.getWay().getId());
+            };
+        };
+        return alignmentSortReversed ? cmp.reversed() : cmp;
+    }
+
+    /**
+     * Create the right-click context menu for the alignment tree.
+     * Rebuilds items on each show so labels reflect current state.
+     */
+    private JPopupMenu createAlignmentSortMenu() {
+        JPopupMenu menu = new JPopupMenu() {
+            @Override
+            public void show(java.awt.Component invoker, int x, int y) {
+                removeAll();
+                addSortItem(this, tr("name"), AlignmentSortMode.NAME);
+                addSortItem(this, tr("length"), AlignmentSortMode.LENGTH);
+                addSortItem(this, tr("node count"), AlignmentSortMode.NODE_COUNT);
+                super.show(invoker, x, y);
+            }
+        };
+        return menu;
+    }
+
+    private void addSortItem(JPopupMenu menu, String label, AlignmentSortMode mode) {
+        if (alignmentSortMode == mode) {
+            // Currently sorted by this — offer to reverse
+            String direction = alignmentSortReversed ? tr("ascending") : tr("descending");
+            JMenuItem item = new JMenuItem(tr("Sort by {0} ({1})", label, direction));
+            item.addActionListener(e -> {
+                alignmentSortReversed = !alignmentSortReversed;
+                rebuildAlignmentTree();
+            });
+            menu.add(item);
+        } else {
+            JMenuItem item = new JMenuItem(tr("Sort by {0}", label));
+            item.addActionListener(e -> {
+                alignmentSortMode = mode;
+                alignmentSortReversed = false;
+                rebuildAlignmentTree();
+            });
+            menu.add(item);
+        }
+    }
+
+    private void rebuildAlignmentTree() {
+        rebuildSingleTree(alignmentRoot, alignmentTree, alignmentResults, getAlignmentComparator());
+        updateTabTitles();
     }
 
     /**
