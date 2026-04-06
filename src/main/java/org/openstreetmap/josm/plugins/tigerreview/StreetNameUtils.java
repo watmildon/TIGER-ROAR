@@ -361,8 +361,8 @@ public final class StreetNameUtils {
 
         // Expand street type (last word, or second-to-last if last is a directional)
         int typeIndex = words.length - 1;
-        if (words.length > 2 && DIRECTIONAL_EXPAND.containsKey(words[typeIndex].toLowerCase())
-                || DIRECTIONAL_CONTRACT.containsKey(words[typeIndex].toLowerCase())) {
+        if (words.length > 2 && (DIRECTIONAL_EXPAND.containsKey(words[typeIndex].toLowerCase())
+                || DIRECTIONAL_CONTRACT.containsKey(words[typeIndex].toLowerCase()))) {
             // Last word is a directional suffix; type is second-to-last
             typeIndex = words.length - 2;
         }

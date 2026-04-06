@@ -64,6 +64,7 @@ import org.openstreetmap.josm.plugins.tigerreview.external.NadDataLoader;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.PreferenceChangeEvent;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
 
 /**
@@ -341,6 +342,7 @@ public class TIGERReviewDialog extends ToggleDialog
             @Override
             protected void done() {
                 try {
+                    get(); // Surface any doInBackground() exception
                     if (!isCancelled()) {
                         tigerResults = tigerRes;
                         surfaceResults = surfaceRes;
@@ -353,7 +355,12 @@ public class TIGERReviewDialog extends ToggleDialog
                                         + speedLimitResults.size() + alignmentResults.size(),
                                 analysisMs));
                     }
+                } catch (java.util.concurrent.CancellationException ex) {
+                    // Worker was cancelled — no error to report
+                    clearResults();
                 } catch (Exception ex) {
+                    Logging.error("TIGER ROAR analysis failed: " + ex.getMessage());
+                    Logging.error(ex);
                     clearResults();
                     setTitle(tr("TIGER ROAR: error"));
                 } finally {

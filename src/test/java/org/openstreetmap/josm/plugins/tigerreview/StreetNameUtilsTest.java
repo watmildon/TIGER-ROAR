@@ -97,6 +97,16 @@ class StreetNameUtilsTest {
     }
 
     @Test
+    void testExpandSingleWord() {
+        // Single-word names should pass through without error
+        assertEquals("North", StreetNameUtils.expand("North"));
+        assertEquals("South", StreetNameUtils.expand("South"));
+        assertEquals("N", StreetNameUtils.expand("N"));
+        assertEquals("Main", StreetNameUtils.expand("Main"));
+        assertEquals("Broadway", StreetNameUtils.expand("Broadway"));
+    }
+
+    @Test
     void testExpandNullAndEmpty() {
         assertNull(StreetNameUtils.expand(null));
         assertEquals("", StreetNameUtils.expand(""));
