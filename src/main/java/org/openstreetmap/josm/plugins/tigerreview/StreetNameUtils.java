@@ -342,33 +342,35 @@ public final class StreetNameUtils {
             return name;
         }
 
-        // Expand directional prefix (first word)
+        // Expand directional prefix (first word). Tolerate trailing period (e.g., "W.").
         String firstLower = words[0].toLowerCase();
-        if (words.length > 1 && DIRECTIONAL_EXPAND.containsKey(firstLower)) {
+        String firstClean = firstLower.endsWith(".") ? firstLower.substring(0, firstLower.length() - 1) : firstLower;
+        if (words.length > 1 && DIRECTIONAL_EXPAND.containsKey(firstClean)) {
             // Guard against "E Street" — don't expand "E" when the rest is just a street type
-            boolean isEStreet = "e".equals(firstLower) && words.length == 2
-                    && STREET_TYPE_EXPAND.containsKey(words[1].toLowerCase());
+            boolean isEStreet = "e".equals(firstClean) && words.length == 2
+                    && STREET_TYPE_EXPAND.containsKey(stripTrailingPeriod(words[1].toLowerCase()));
             if (!isEStreet) {
-                words[0] = DIRECTIONAL_EXPAND.get(firstLower);
+                words[0] = DIRECTIONAL_EXPAND.get(firstClean);
             }
         }
 
-        // Expand directional suffix (last word)
+        // Expand directional suffix (last word). Tolerate trailing period.
         String lastLower = words[words.length - 1].toLowerCase();
-        if (words.length > 1 && DIRECTIONAL_EXPAND.containsKey(lastLower)) {
-            words[words.length - 1] = DIRECTIONAL_EXPAND.get(lastLower);
+        String lastClean = stripTrailingPeriod(lastLower);
+        if (words.length > 1 && DIRECTIONAL_EXPAND.containsKey(lastClean)) {
+            words[words.length - 1] = DIRECTIONAL_EXPAND.get(lastClean);
         }
 
         // Expand street type (last word, or second-to-last if last is a directional)
         int typeIndex = words.length - 1;
-        if (words.length > 2 && (DIRECTIONAL_EXPAND.containsKey(words[typeIndex].toLowerCase())
-                || DIRECTIONAL_CONTRACT.containsKey(words[typeIndex].toLowerCase()))) {
-            // Last word is a directional suffix; type is second-to-last
-            typeIndex = words.length - 2;
+        if (words.length > 2) {
+            String tailClean = stripTrailingPeriod(words[typeIndex].toLowerCase());
+            if (DIRECTIONAL_EXPAND.containsKey(tailClean) || DIRECTIONAL_CONTRACT.containsKey(tailClean)) {
+                // Last word is a directional suffix; type is second-to-last
+                typeIndex = words.length - 2;
+            }
         }
-        String typeLower = words[typeIndex].toLowerCase();
-        // Remove trailing period from abbreviations like "Ave."
-        String typeClean = typeLower.endsWith(".") ? typeLower.substring(0, typeLower.length() - 1) : typeLower;
+        String typeClean = stripTrailingPeriod(words[typeIndex].toLowerCase());
         if (STREET_TYPE_EXPAND.containsKey(typeClean)) {
             words[typeIndex] = STREET_TYPE_EXPAND.get(typeClean);
         }
@@ -409,6 +411,10 @@ public final class StreetNameUtils {
         result = FS_ROAD_PATTERN.matcher(result).replaceFirst("Forest Service Road");
 
         return result;
+    }
+
+    private static String stripTrailingPeriod(String s) {
+        return s.endsWith(".") ? s.substring(0, s.length() - 1) : s;
     }
 
     /**
