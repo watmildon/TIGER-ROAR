@@ -277,29 +277,11 @@ public class TIGERReviewDialog extends ToggleDialog
 
     /**
      * Codes that belong in the Single Review tab. Other TIGER codes stay in Bulk Review.
-     *
-     * <p>Single Review hosts items that need eyes on a specific road: per-road
-     * name suggestions and "name verified, alignment needs review" items. The
-     * combined NAD+address evidence codes ({@code TIGER_COMBINED_*}) stay in
-     * Bulk Review because they're high-confidence enough to apply en masse.
+     * Delegates to {@link TIGERReviewTest#belongsInBulkReview(ReviewResult)} so the
+     * side panel and the JOSM validator never drift on what counts as bulk-actionable.
      */
     private static boolean routesToSingleReview(ReviewResult rr) {
-        int code = rr.getCode();
-        // Per-source name and directional suggestions
-        if (code == TIGERReviewTest.TIGER_NAD_NAME_SUGGESTION
-                || code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION
-                || code == TIGERReviewTest.TIGER_COMBINED_NAME_SUGGESTION
-                || code == TIGERReviewTest.TIGER_NAD_DIRECTIONAL_SUGGESTION
-                || code == TIGERReviewTest.TIGER_ADDRESS_DIRECTIONAL_SUGGESTION
-                || code == TIGERReviewTest.TIGER_COMBINED_DIRECTIONAL_SUGGESTION) {
-            return true;
-        }
-        // "Name verified, alignment needs review" — the SET_NAME_REVIEWED variant of
-        // the various TIGER_NAME_VERIFIED_* codes. Fully-verified (REMOVE_TAG) stays in Bulk.
-        if (rr.getFixAction() == TIGERReviewAnalyzer.FixAction.SET_NAME_REVIEWED) {
-            return true;
-        }
-        return false;
+        return !TIGERReviewTest.belongsInBulkReview(rr);
     }
 
     private List<ReviewResult> bulkReviewSlice() {
