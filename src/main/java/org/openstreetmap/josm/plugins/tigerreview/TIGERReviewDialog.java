@@ -55,10 +55,6 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListen
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
 import org.openstreetmap.josm.plugins.tigerreview.AlignmentAnalyzer.AlignmentResult;
-import org.openstreetmap.josm.plugins.tigerreview.SpeedLimitAnalyzer.SpeedLimitSuggestion;
-import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
-import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataCache;
-import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataLoader;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataCache;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataLoader;
 import org.openstreetmap.josm.spi.preferences.Config;
@@ -68,37 +64,27 @@ import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
 
 /**
- * Side panel for TIGER review and surface suggestion results.
+ * Side panel for TIGER review results.
  *
- * Uses a tabbed layout to separate TIGER review results from surface
- * suggestions. Each tab uses an independent analyzer and provides
- * Fix / Fix All controls.
+ * Uses a tabbed layout: Bulk Review (multi-road analysis with name corroboration)
+ * and Single Review (per-road alignment worklist). Each tab uses an independent
+ * analyzer and provides Fix / Fix All controls.
  */
 public class TIGERReviewDialog extends ToggleDialog
         implements ActiveLayerChangeListener, DataSelectionListener, CommandQueuePreciseListener {
 
     private final JTabbedPane tabbedPane;
 
-    // TIGER review tab
+    // Bulk Review tab
     private final DefaultMutableTreeNode tigerRoot;
     private final JTree tigerTree;
 
-    // Surface suggestions tab
-    private final DefaultMutableTreeNode surfaceRoot;
-    private final JTree surfaceTree;
-
-    // Speed limit tab
-    private final DefaultMutableTreeNode speedLimitRoot;
-    private final JTree speedLimitTree;
-
-    // Alignment tab
+    // Single Review (alignment) tab
     private final DefaultMutableTreeNode alignmentRoot;
     private final JTree alignmentTree;
     private final AlignmentTaggingPanel taggingPanel;
 
     private List<ReviewResult> tigerResults = new ArrayList<>();
-    private List<SurfaceSuggestion> surfaceResults = new ArrayList<>();
-    private List<SpeedLimitSuggestion> speedLimitResults = new ArrayList<>();
     private List<AlignmentResult> alignmentResults = new ArrayList<>();
 
     private final AbstractAction analyzeAction;
@@ -141,19 +127,11 @@ public class TIGERReviewDialog extends ToggleDialog
             150
         );
 
-        // --- TIGER review tree ---
+        // --- Bulk Review tree ---
         tigerRoot = new DefaultMutableTreeNode("Results");
         tigerTree = createResultTree(tigerRoot);
 
-        // --- Surface suggestions tree ---
-        surfaceRoot = new DefaultMutableTreeNode("Results");
-        surfaceTree = createResultTree(surfaceRoot);
-
-        // --- Speed limit tree ---
-        speedLimitRoot = new DefaultMutableTreeNode("Results");
-        speedLimitTree = createResultTree(speedLimitRoot);
-
-        // --- Alignment tree + tagging panel ---
+        // --- Single Review (alignment) tree + tagging panel ---
         alignmentRoot = new DefaultMutableTreeNode("Results");
         alignmentTree = createResultTree(alignmentRoot);
         alignmentTree.setComponentPopupMenu(createAlignmentSortMenu());
@@ -167,10 +145,8 @@ public class TIGERReviewDialog extends ToggleDialog
 
         // --- Tabbed pane ---
         tabbedPane = new JTabbedPane();
-        tabbedPane.addTab(tr("TIGER Review"), new JScrollPane(tigerTree));
-        tabbedPane.addTab(tr("Surface"), new JScrollPane(surfaceTree));
-        tabbedPane.addTab(tr("Speed Limit"), new JScrollPane(speedLimitTree));
-        tabbedPane.addTab(tr("Alignment"), alignmentSplit);
+        tabbedPane.addTab(tr("Bulk Review"), new JScrollPane(tigerTree));
+        tabbedPane.addTab(tr("Single Review"), alignmentSplit);
         tabbedPane.addChangeListener(e -> updateButtonState());
 
         // --- Actions ---
@@ -252,35 +228,19 @@ public class TIGERReviewDialog extends ToggleDialog
     // --- Tab helpers ---
 
     private JTree getActiveTree() {
-        return switch (tabbedPane.getSelectedIndex()) {
-            case 1 -> surfaceTree;
-            case 2 -> speedLimitTree;
-            case 3 -> alignmentTree;
-            default -> tigerTree;
-        };
+        return tabbedPane.getSelectedIndex() == 1 ? alignmentTree : tigerTree;
     }
 
     private DefaultMutableTreeNode getActiveRoot() {
-        return switch (tabbedPane.getSelectedIndex()) {
-            case 1 -> surfaceRoot;
-            case 2 -> speedLimitRoot;
-            case 3 -> alignmentRoot;
-            default -> tigerRoot;
-        };
+        return tabbedPane.getSelectedIndex() == 1 ? alignmentRoot : tigerRoot;
     }
 
     private List<? extends TreeDisplayable> getActiveResults() {
-        return switch (tabbedPane.getSelectedIndex()) {
-            case 1 -> surfaceResults;
-            case 2 -> speedLimitResults;
-            case 3 -> alignmentResults;
-            default -> tigerResults;
-        };
+        return tabbedPane.getSelectedIndex() == 1 ? alignmentResults : tigerResults;
     }
 
     private boolean hasAnyResults() {
-        return !tigerResults.isEmpty() || !surfaceResults.isEmpty()
-                || !speedLimitResults.isEmpty() || !alignmentResults.isEmpty();
+        return !tigerResults.isEmpty() || !alignmentResults.isEmpty();
     }
 
     // --- Analysis ---
@@ -305,8 +265,6 @@ public class TIGERReviewDialog extends ToggleDialog
 
         currentWorker = new SwingWorker<Void, Void>() {
             private List<ReviewResult> tigerRes;
-            private List<SurfaceSuggestion> surfaceRes;
-            private List<SpeedLimitSuggestion> speedLimitRes;
             private List<AlignmentResult> alignmentRes;
             private long analysisMs;
 
@@ -317,21 +275,10 @@ public class TIGERReviewDialog extends ToggleDialog
                         && !NadDataCache.getInstance().isReady()) {
                     NadDataLoader.getInstance().loadForDataSetSync(ds);
                 }
-                // Load Mapillary data synchronously before analysis if needed
-                if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)
-                        && !MapillaryDataCache.getInstance().isReady()) {
-                    MapillaryDataLoader.getInstance().loadForDataSetSync(ds);
-                }
                 long startTime = System.nanoTime();
                 TIGERReviewAnalyzer.AnalysisResult tigerAnalysis =
                         TIGERReviewAnalyzer.analyzeAllTimed(ds);
                 tigerRes = tigerAnalysis.getResults();
-                SurfaceAnalyzer.SurfaceAnalysisResult surfaceAnalysis =
-                        SurfaceAnalyzer.analyzeAllTimed(ds);
-                surfaceRes = surfaceAnalysis.getResults();
-                SpeedLimitAnalyzer.SpeedLimitAnalysisResult speedLimitAnalysis =
-                        SpeedLimitAnalyzer.analyzeAllTimed(ds);
-                speedLimitRes = speedLimitAnalysis.getResults();
                 AlignmentAnalyzer.AlignmentAnalysisResult alignmentAnalysis =
                         AlignmentAnalyzer.analyzeAllTimed(ds);
                 alignmentRes = alignmentAnalysis.getResults();
@@ -345,14 +292,11 @@ public class TIGERReviewDialog extends ToggleDialog
                     get(); // Surface any doInBackground() exception
                     if (!isCancelled()) {
                         tigerResults = tigerRes;
-                        surfaceResults = surfaceRes;
-                        speedLimitResults = speedLimitRes;
                         alignmentResults = alignmentRes;
                         rebuildTrees();
                         applyPendingSelection();
                         setTitle(buildTitle(
-                                tigerResults.size() + surfaceResults.size()
-                                        + speedLimitResults.size() + alignmentResults.size(),
+                                tigerResults.size() + alignmentResults.size(),
                                 analysisMs));
                     }
                 } catch (java.util.concurrent.CancellationException ex) {
@@ -374,8 +318,6 @@ public class TIGERReviewDialog extends ToggleDialog
 
     private void clearResults() {
         tigerResults = new ArrayList<>();
-        surfaceResults = new ArrayList<>();
-        speedLimitResults = new ArrayList<>();
         alignmentResults = new ArrayList<>();
         rebuildTrees();
         setTitle(tr("TIGER ROAR"));
@@ -389,8 +331,6 @@ public class TIGERReviewDialog extends ToggleDialog
      */
     private void rebuildTrees() {
         rebuildSingleTree(tigerRoot, tigerTree, tigerResults, null);
-        rebuildSingleTree(surfaceRoot, surfaceTree, surfaceResults, null);
-        rebuildSingleTree(speedLimitRoot, speedLimitTree, speedLimitResults, null);
         rebuildSingleTree(alignmentRoot, alignmentTree, alignmentResults, getAlignmentComparator());
         updateTabTitles();
     }
@@ -474,10 +414,8 @@ public class TIGERReviewDialog extends ToggleDialog
             case NODE_COUNT -> tr("nodes {0}", arrow);
             default -> tr("name {0}", arrow);
         };
-        tabbedPane.setTitleAt(0, tr("TIGER Review ({0})", tigerResults.size()));
-        tabbedPane.setTitleAt(1, tr("Surface ({0})", surfaceResults.size()));
-        tabbedPane.setTitleAt(2, tr("Speed Limit ({0})", speedLimitResults.size()));
-        tabbedPane.setTitleAt(3, tr("Alignment ({0}, {1})", alignmentResults.size(), sortLabel));
+        tabbedPane.setTitleAt(0, tr("Bulk Review ({0})", tigerResults.size()));
+        tabbedPane.setTitleAt(1, tr("Single Review ({0}, {1})", alignmentResults.size(), sortLabel));
     }
 
     /**
@@ -549,7 +487,7 @@ public class TIGERReviewDialog extends ToggleDialog
      * Priority for sorting groups in the tree.
      * Lower number = higher in the list.
      *
-     * TIGER Review tab ordering:
+     * Bulk Review tab ordering:
      *   0  Residual TIGER tags (trivial cleanup)
      *   1  Unnamed road verified (trivial, no name to worry about)
      *   2  Fully verified (name + alignment, just remove tag)
@@ -561,13 +499,6 @@ public class TIGERReviewDialog extends ToggleDialog
      *   8  Combined name suggestion (NAD + addresses agree, informational)
      *   9  Individual name suggestions (informational)
      *  10  Alignment verified, name not corroborated (fix sets tiger:reviewed=aerial)
-     *
-     * Surface tab ordering:
-     *   0-5  Surface suggestions by confidence (high to low)
-     *   6    Surface conflict (informational)
-     *
-     * Speed Limit tab ordering:
-     *   0-3  Speed suggestions by confidence (high to low)
      */
     private static int getGroupPriority(TreeDisplayable result) {
         int code = result.getCode();
@@ -601,26 +532,7 @@ public class TIGERReviewDialog extends ToggleDialog
                 || code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION) return 9;
         if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 10;
 
-        // --- Surface tab ---
-
-        if (code == SurfaceTest.SURFACE_CONNECTED_ROAD) return 0;
-        if (code == SurfaceTest.SURFACE_CONNECTED_ROAD_UPGRADE) return 1;
-        if (code == SurfaceTest.SURFACE_CROSSING) return 2;
-        if (code == SurfaceTest.SURFACE_CROSSING_UPGRADE) return 3;
-        if (code == SurfaceTest.SURFACE_PARKING_AREA) return 4;
-        if (code == SurfaceTest.SURFACE_PARKING_AREA_UPGRADE) return 5;
-        if (code == SurfaceTest.SURFACE_LANES_PAVED) return 6;
-        if (code == SurfaceTest.SURFACE_LANES_CONFLICT) return 7;
-        if (code == SurfaceTest.SURFACE_CONFLICT) return 8;
-
-        // --- Speed Limit tab ---
-
-        if (code == SpeedLimitTest.SPEED_MISSING_MULTI_SIGN) return 0;
-        if (code == SpeedLimitTest.SPEED_MISSING) return 1;
-        if (code == SpeedLimitTest.SPEED_CONFLICT_MULTI_SIGN) return 2;
-        if (code == SpeedLimitTest.SPEED_CONFLICT) return 3;
-
-        // --- Alignment tab ---
+        // --- Single Review (alignment) tab ---
 
         if (code == AlignmentAnalyzer.ALIGNMENT_NAME_REVIEWED) return 0;
         if (code == AlignmentAnalyzer.ALIGNMENT_UNNAMED_UNREVIEWED) return 1;
@@ -660,8 +572,8 @@ public class TIGERReviewDialog extends ToggleDialog
         pendingLeafIndex = computeNextLeafIndex(activeTree, getActiveRoot(), toFix);
         pendingTabIndex = tabbedPane.getSelectedIndex();
 
-        // Alignment tab: also apply any selected surface/lanes tags
-        if (tabbedPane.getSelectedIndex() == 3) {
+        // Single Review (alignment) tab: also apply any selected surface/lanes tags
+        if (tabbedPane.getSelectedIndex() == 1) {
             applyAlignmentTagsAndFix(taggingPanel.getSelectedTags());
             return;
         }
@@ -761,7 +673,7 @@ public class TIGERReviewDialog extends ToggleDialog
         // Set pending selection if not already set by fixSelected()
         if (pendingLeafIndex < 0) {
             pendingLeafIndex = computeNextLeafIndex(alignmentTree, alignmentRoot, toFix);
-            pendingTabIndex = 3;
+            pendingTabIndex = 1;
         }
 
         // Record in MRU
@@ -983,17 +895,6 @@ public class TIGERReviewDialog extends ToggleDialog
                 title += " (NAD: not loaded)";
             }
         }
-        if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)) {
-            MapillaryDataCache cache = MapillaryDataCache.getInstance();
-            if (cache.isReady()) {
-                title += " (Mapillary: " + cache.getDetectionCount() + " signs, "
-                        + cache.getMarkingCount() + " markings)";
-            } else if (cache.getErrorMessage() != null) {
-                title += " (Mapillary: error)";
-            } else {
-                title += " (Mapillary: not loaded)";
-            }
-        }
         return title;
     }
 
@@ -1065,17 +966,13 @@ public class TIGERReviewDialog extends ToggleDialog
 
             if (selectedWays.isEmpty()) {
                 tigerTree.clearSelection();
-                surfaceTree.clearSelection();
-                speedLimitTree.clearSelection();
                 alignmentTree.clearSelection();
                 return;
             }
 
-            // Sync all trees; only scroll the active one
+            // Sync both trees; only scroll the active one
             JTree active = getActiveTree();
             syncTreeSelection(tigerTree, tigerRoot, selectedWays, tigerTree == active);
-            syncTreeSelection(surfaceTree, surfaceRoot, selectedWays, surfaceTree == active);
-            syncTreeSelection(speedLimitTree, speedLimitRoot, selectedWays, speedLimitTree == active);
             syncTreeSelection(alignmentTree, alignmentRoot, selectedWays, alignmentTree == active);
         } finally {
             updatingSelection = false;
@@ -1093,18 +990,8 @@ public class TIGERReviewDialog extends ToggleDialog
         pendingLeafIndex = -1;
         pendingTabIndex = -1;
 
-        JTree tree = switch (tabIdx) {
-            case 1 -> surfaceTree;
-            case 2 -> speedLimitTree;
-            case 3 -> alignmentTree;
-            default -> tigerTree;
-        };
-        DefaultMutableTreeNode root = switch (tabIdx) {
-            case 1 -> surfaceRoot;
-            case 2 -> speedLimitRoot;
-            case 3 -> alignmentRoot;
-            default -> tigerRoot;
-        };
+        JTree tree = tabIdx == 1 ? alignmentTree : tigerTree;
+        DefaultMutableTreeNode root = tabIdx == 1 ? alignmentRoot : tigerRoot;
 
         // Select the leaf — this triggers the tree's selection listener which
         // syncs the JOSM map selection (ds.setSelected). Do NOT guard with
