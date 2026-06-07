@@ -68,6 +68,12 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for stripping all tiger:* tags on fully verified roads */
     public static final String PREF_STRIP_TIGER_TAGS = "tigerreview.fix.stripTigerTags";
 
+    /** Preference key for the missing-surface worklist (Single Review tab). */
+    public static final String PREF_CHECK_MISSING_SURFACE = "tigerreview.check.missingSurface";
+
+    /** Preference key for the missing-lanes worklist (Single Review tab). */
+    public static final String PREF_CHECK_MISSING_LANES = "tigerreview.check.missingLanes";
+
     /** Preference key for enabling Mapillary data download (master toggle) */
     public static final String PREF_ENABLE_MAPILLARY_CHECK = "tigerreview.check.mapillary";
 
@@ -112,6 +118,8 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox nodeVersionCheckBox;
     private JCheckBox nadCheckBox;
     private JCheckBox stripTigerTagsCheckBox;
+    private JCheckBox missingSurfaceCheckBox;
+    private JCheckBox missingLanesCheckBox;
     private JTextField additionalBotUsernamesField;
     private JSpinner postTigerIdSpinner;
     private JSpinner dualCarriageDistanceSpinner;
@@ -240,6 +248,29 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         outerGbc.gridy = 1;
         outerPanel.add(alignmentPanel, outerGbc);
 
+        // === General Review Section (non-TIGER worklists) ===
+        JPanel generalPanel = new JPanel(new GridBagLayout());
+        generalPanel.setBorder(BorderFactory.createTitledBorder(tr("General Review")));
+        gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        row = 0;
+
+        missingSurfaceCheckBox = new JCheckBox(tr("Missing surface worklist"));
+        missingSurfaceCheckBox.setToolTipText(
+                tr("List vehicular roads without a surface= tag in the Single Review tab"));
+        missingSurfaceCheckBox.setSelected(Config.getPref().getBoolean(PREF_CHECK_MISSING_SURFACE, true));
+        addCheckBox(generalPanel, gbc, row++, missingSurfaceCheckBox);
+
+        missingLanesCheckBox = new JCheckBox(tr("Missing lanes worklist"));
+        missingLanesCheckBox.setToolTipText(
+                tr("List vehicular roads without a lanes= tag in the Single Review tab"));
+        missingLanesCheckBox.setSelected(Config.getPref().getBoolean(PREF_CHECK_MISSING_LANES, true));
+        addCheckBox(generalPanel, gbc, row++, missingLanesCheckBox);
+
+        outerGbc.gridy = 2;
+        outerPanel.add(generalPanel, outerGbc);
+
         // === Fix Behavior Section ===
         JPanel fixPanel = new JPanel(new GridBagLayout());
         fixPanel.setBorder(BorderFactory.createTitledBorder(tr("Fix Behavior")));
@@ -257,7 +288,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         fixPanel.add(stripTigerTagsCheckBox, gbc);
         gbc.weightx = 0;
 
-        outerGbc.gridy = 2;
+        outerGbc.gridy = 3;
         outerPanel.add(fixPanel, outerGbc);
 
         JPanel wrapper = new JPanel(new BorderLayout());
@@ -309,6 +340,8 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putBoolean(PREF_ENABLE_NAD_CHECK, nadCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_DUAL_CARRIAGE_CHECK, dualCarriageCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_STRIP_TIGER_TAGS, stripTigerTagsCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_CHECK_MISSING_SURFACE, missingSurfaceCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_CHECK_MISSING_LANES, missingLanesCheckBox.isSelected());
 
         // Save parameter settings
         Config.getPref().putDouble(PREF_ADDRESS_MAX_DISTANCE, (Double) addressDistanceSpinner.getValue());

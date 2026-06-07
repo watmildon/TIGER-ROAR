@@ -140,6 +140,21 @@ class AlignmentTaggingPanel extends JPanel {
     }
 
     /**
+     * Enable or disable all interactive controls in the panel. Used by the dialog
+     * to lock the panel when the alignment-tree selection contains no
+     * AlignmentResult rows (i.e., the user only highlighted name-suggestion rows
+     * that shouldn't receive surface/lanes tags).
+     */
+    void setTaggingEnabled(boolean enabled) {
+        surfaceCombo.setEnabled(enabled);
+        lanesCombo.setEnabled(enabled);
+        customButton.setEnabled(enabled);
+        for (java.awt.Component c : presetsPanel.getComponents()) {
+            c.setEnabled(enabled);
+        }
+    }
+
+    /**
      * Clear the dropdown selections back to "none".
      */
     void clearSelection() {
