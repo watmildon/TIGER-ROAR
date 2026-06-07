@@ -304,8 +304,15 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 4;
+        // Force the spanning cell to absorb horizontal slack so the WEST anchor
+        // pulls the checkbox to the left edge. Without this, panels that have no
+        // sibling addLabeledRow() (e.g., General Review) leave the cell unstretched
+        // and the layout right-aligns the checkbox.
+        double savedWeightX = gbc.weightx;
+        gbc.weightx = 1.0;
         panel.add(checkBox, gbc);
         gbc.gridwidth = 1;
+        gbc.weightx = savedWeightX;
     }
 
     private static void addLabeledRow(JPanel panel, GridBagConstraints gbc, int row,
