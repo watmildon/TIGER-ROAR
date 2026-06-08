@@ -7,10 +7,13 @@ josm {
     pluginName = 'TIGER-ROAR'
     josmCompileVersion = 19439
     manifest {
-        description = 'Validator warnings for TIGER review'
+        description = 'Review TIGER-imported US roads'
         mainClass = 'org.openstreetmap.josm.plugins.tigerreview.TIGERReviewPlugin'
         minJosmVersion = 19439
         iconPath = 'images/dialogs/tiger-review.svg'
+        author = 'watmildon'
+        website('https://github.com/watmildon/TIGER-ROAR')
+        canLoadAtRuntime = true
     }
 }
 

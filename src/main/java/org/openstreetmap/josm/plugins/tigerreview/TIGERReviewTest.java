@@ -227,15 +227,40 @@ public class TIGERReviewTest extends Test {
                 nadCheckEnabled, dualCarriageCheckEnabled, stripTigerTags);
 
         for (ReviewResult result : results) {
-            // Only emit high-value warnings in the validator:
-            // fully verified (REMOVE_TAG) and residual tiger:* tags.
-            // Other results (name-only, alignment-only, suggestions) are
-            // available in the TIGER ROAR side panel but too noisy for the validator.
-            if (result.getCode() == TIGER_RESIDUAL_TAGS
-                    || result.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
+            // Emit the same set the side panel's "Bulk Review" tab shows. Items
+            // routed to the "Single Review" tab (per-road name suggestions and
+            // "name verified, alignment needs review") are too noisy for the
+            // validator and would force the user back to the side panel anyway.
+            if (belongsInBulkReview(result)) {
                 errors.add(toTestError(result));
             }
         }
+    }
+
+    /**
+     * Same routing the side panel uses to decide Bulk vs Single Review. Single
+     * Review hosts items that need eyes on a specific road: per-road name
+     * suggestions and "name verified, alignment needs review" items. Everything
+     * else lands in Bulk Review and is also emitted by this validator.
+     */
+    public static boolean belongsInBulkReview(ReviewResult rr) {
+        int code = rr.getCode();
+        // Per-source and combined name/directional suggestions go to Single Review.
+        if (code == TIGER_NAD_NAME_SUGGESTION
+                || code == TIGER_ADDRESS_NAME_SUGGESTION
+                || code == TIGER_COMBINED_NAME_SUGGESTION
+                || code == TIGER_NAD_DIRECTIONAL_SUGGESTION
+                || code == TIGER_ADDRESS_DIRECTIONAL_SUGGESTION
+                || code == TIGER_COMBINED_DIRECTIONAL_SUGGESTION) {
+            return false;
+        }
+        // "Name verified, alignment needs review" — the SET_NAME_REVIEWED variant
+        // of the various TIGER_NAME_VERIFIED_* codes. Fully-verified (REMOVE_TAG)
+        // stays in Bulk.
+        if (rr.getFixAction() == TIGERReviewAnalyzer.FixAction.SET_NAME_REVIEWED) {
+            return false;
+        }
+        return true;
     }
 
     /**

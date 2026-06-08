@@ -68,6 +68,12 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     /** Preference key for stripping all tiger:* tags on fully verified roads */
     public static final String PREF_STRIP_TIGER_TAGS = "tigerreview.fix.stripTigerTags";
 
+    /** Preference key for the missing-surface worklist (Single Review tab). */
+    public static final String PREF_CHECK_MISSING_SURFACE = "tigerreview.check.missingSurface";
+
+    /** Preference key for the missing-lanes worklist (Single Review tab). */
+    public static final String PREF_CHECK_MISSING_LANES = "tigerreview.check.missingLanes";
+
     /** Preference key for enabling Mapillary data download (master toggle) */
     public static final String PREF_ENABLE_MAPILLARY_CHECK = "tigerreview.check.mapillary";
 
@@ -112,14 +118,11 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JCheckBox nodeVersionCheckBox;
     private JCheckBox nadCheckBox;
     private JCheckBox stripTigerTagsCheckBox;
+    private JCheckBox missingSurfaceCheckBox;
+    private JCheckBox missingLanesCheckBox;
     private JTextField additionalBotUsernamesField;
     private JSpinner postTigerIdSpinner;
     private JSpinner dualCarriageDistanceSpinner;
-    private JCheckBox mapillaryCheckBox;
-    private JCheckBox mapillarySpeedCheckBox;
-    private JTextField mapillaryApiKeyField;
-    private JSpinner mapillaryDistanceSpinner;
-
     public TIGERReviewPreferences() {
         super("preferences/tiger_review", tr("TIGER ROAR"), tr("Settings for TIGER ROAR plugin"));
     }
@@ -245,6 +248,29 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         outerGbc.gridy = 1;
         outerPanel.add(alignmentPanel, outerGbc);
 
+        // === General Review Section (non-TIGER worklists) ===
+        JPanel generalPanel = new JPanel(new GridBagLayout());
+        generalPanel.setBorder(BorderFactory.createTitledBorder(tr("General Review")));
+        gbc = new GridBagConstraints();
+        gbc.insets = new Insets(3, 5, 3, 5);
+        gbc.anchor = GridBagConstraints.WEST;
+        row = 0;
+
+        missingSurfaceCheckBox = new JCheckBox(tr("Missing surface worklist"));
+        missingSurfaceCheckBox.setToolTipText(
+                tr("List vehicular roads without a surface= tag in the Single Review tab"));
+        missingSurfaceCheckBox.setSelected(Config.getPref().getBoolean(PREF_CHECK_MISSING_SURFACE, true));
+        addCheckBox(generalPanel, gbc, row++, missingSurfaceCheckBox);
+
+        missingLanesCheckBox = new JCheckBox(tr("Missing lanes worklist"));
+        missingLanesCheckBox.setToolTipText(
+                tr("List vehicular roads without a lanes= tag in the Single Review tab"));
+        missingLanesCheckBox.setSelected(Config.getPref().getBoolean(PREF_CHECK_MISSING_LANES, true));
+        addCheckBox(generalPanel, gbc, row++, missingLanesCheckBox);
+
+        outerGbc.gridy = 2;
+        outerPanel.add(generalPanel, outerGbc);
+
         // === Fix Behavior Section ===
         JPanel fixPanel = new JPanel(new GridBagLayout());
         fixPanel.setBorder(BorderFactory.createTitledBorder(tr("Fix Behavior")));
@@ -262,56 +288,8 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         fixPanel.add(stripTigerTagsCheckBox, gbc);
         gbc.weightx = 0;
 
-        outerGbc.gridy = 2;
-        outerPanel.add(fixPanel, outerGbc);
-
-        // === Mapillary (US only) Section ===
-        JPanel mapillaryPanel = new JPanel(new GridBagLayout());
-        mapillaryPanel.setBorder(BorderFactory.createTitledBorder(tr("Mapillary (US only)")));
-        gbc = new GridBagConstraints();
-        gbc.insets = new Insets(3, 5, 3, 5);
-        gbc.anchor = GridBagConstraints.WEST;
-        row = 0;
-
-        mapillaryCheckBox = new JCheckBox(tr("Enable Mapillary data download"));
-        mapillaryCheckBox.setToolTipText(
-                tr("Download detections from Mapillary for US areas. Must be enabled before downloading data."));
-        mapillaryCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_MAPILLARY_CHECK, false));
-        addCheckBox(mapillaryPanel, gbc, row++, mapillaryCheckBox);
-
-        mapillarySpeedCheckBox = new JCheckBox(tr("Speed limit signs"));
-        mapillarySpeedCheckBox.setToolTipText(
-                tr("Use Mapillary speed limit sign detections to suggest or verify maxspeed tags"));
-        mapillarySpeedCheckBox.setSelected(Config.getPref().getBoolean(PREF_ENABLE_MAPILLARY_SPEED, true));
-        mapillarySpeedCheckBox.setEnabled(mapillaryCheckBox.isSelected());
-        addIndentedCheckBox(mapillaryPanel, gbc, row++, mapillarySpeedCheckBox);
-
-        // Enable/disable sub-checkboxes when master toggle changes
-        mapillaryCheckBox.addActionListener(e -> {
-            boolean enabled = mapillaryCheckBox.isSelected();
-            mapillarySpeedCheckBox.setEnabled(enabled);
-        });
-
-        String currentApiKey = Config.getPref().get(PREF_MAPILLARY_API_KEY, "");
-        mapillaryApiKeyField = new JTextField(currentApiKey, 20);
-        mapillaryApiKeyField.setPreferredSize(addressDistanceSpinner.getPreferredSize());
-        addLabeledRow(mapillaryPanel, gbc, row++,
-                tr("API token:"), mapillaryApiKeyField,
-                "",
-                tr("Mapillary client token from mapillary.com/dashboard/developers. Stored in JOSM preferences file."));
-
-        double currentMapillaryDistance = Config.getPref().getDouble(
-                PREF_MAPILLARY_MAX_DISTANCE, DEFAULT_MAPILLARY_MAX_DISTANCE);
-        mapillaryDistanceSpinner = new JSpinner(
-                new SpinnerNumberModel(currentMapillaryDistance, 5.0, 100.0, 5.0));
-        mapillaryDistanceSpinner.setPreferredSize(addressDistanceSpinner.getPreferredSize());
-        addLabeledRow(mapillaryPanel, gbc, row++,
-                tr("Matching distance (m):"), mapillaryDistanceSpinner,
-                tr("(default: {0})", DEFAULT_MAPILLARY_MAX_DISTANCE),
-                tr("Maximum distance to match a Mapillary detection to a road"));
-
         outerGbc.gridy = 3;
-        outerPanel.add(mapillaryPanel, outerGbc);
+        outerPanel.add(fixPanel, outerGbc);
 
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.add(outerPanel, BorderLayout.NORTH);
@@ -326,19 +304,15 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 4;
+        // Force the spanning cell to absorb horizontal slack so the WEST anchor
+        // pulls the checkbox to the left edge. Without this, panels that have no
+        // sibling addLabeledRow() (e.g., General Review) leave the cell unstretched
+        // and the layout right-aligns the checkbox.
+        double savedWeightX = gbc.weightx;
+        gbc.weightx = 1.0;
         panel.add(checkBox, gbc);
         gbc.gridwidth = 1;
-    }
-
-    private static void addIndentedCheckBox(JPanel panel, GridBagConstraints gbc, int row, JCheckBox checkBox) {
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        gbc.gridwidth = 4;
-        Insets original = gbc.insets;
-        gbc.insets = new Insets(original.top, original.left + 20, original.bottom, original.right);
-        panel.add(checkBox, gbc);
-        gbc.insets = original;
-        gbc.gridwidth = 1;
+        gbc.weightx = savedWeightX;
     }
 
     private static void addLabeledRow(JPanel panel, GridBagConstraints gbc, int row,
@@ -373,6 +347,8 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putBoolean(PREF_ENABLE_NAD_CHECK, nadCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_ENABLE_DUAL_CARRIAGE_CHECK, dualCarriageCheckBox.isSelected());
         Config.getPref().putBoolean(PREF_STRIP_TIGER_TAGS, stripTigerTagsCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_CHECK_MISSING_SURFACE, missingSurfaceCheckBox.isSelected());
+        Config.getPref().putBoolean(PREF_CHECK_MISSING_LANES, missingLanesCheckBox.isSelected());
 
         // Save parameter settings
         Config.getPref().putDouble(PREF_ADDRESS_MAX_DISTANCE, (Double) addressDistanceSpinner.getValue());
@@ -383,12 +359,6 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         Config.getPref().putDouble(PREF_DUAL_CARRIAGE_MAX_DISTANCE, (Double) dualCarriageDistanceSpinner.getValue());
         Config.getPref().put(PREF_ADDITIONAL_BOT_USERNAMES, additionalBotUsernamesField.getText().trim());
         Config.getPref().putDouble(PREF_NODE_MIN_POST_TIGER_ID, (Double) postTigerIdSpinner.getValue());
-
-        // Save Mapillary settings
-        Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_CHECK, mapillaryCheckBox.isSelected());
-        Config.getPref().putBoolean(PREF_ENABLE_MAPILLARY_SPEED, mapillarySpeedCheckBox.isSelected());
-        Config.getPref().put(PREF_MAPILLARY_API_KEY, mapillaryApiKeyField.getText().trim());
-        Config.getPref().putDouble(PREF_MAPILLARY_MAX_DISTANCE, (Double) mapillaryDistanceSpinner.getValue());
 
         return false; // No restart required
     }

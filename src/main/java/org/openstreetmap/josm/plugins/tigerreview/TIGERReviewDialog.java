@@ -22,7 +22,10 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import javax.swing.AbstractAction;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTree;
 import javax.swing.SwingWorker;
@@ -33,6 +36,7 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 
 import org.openstreetmap.josm.actions.AutoScaleAction;
+import org.openstreetmap.josm.command.ChangePropertyCommand;
 import org.openstreetmap.josm.command.Command;
 import org.openstreetmap.josm.command.SequenceCommand;
 import org.openstreetmap.josm.data.UndoRedoHandler;
@@ -50,44 +54,40 @@ import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeEvent;
 import org.openstreetmap.josm.gui.layer.MainLayerManager.ActiveLayerChangeListener;
 import org.openstreetmap.josm.gui.layer.OsmDataLayer;
 import org.openstreetmap.josm.plugins.tigerreview.TIGERReviewAnalyzer.ReviewResult;
-import org.openstreetmap.josm.plugins.tigerreview.SpeedLimitAnalyzer.SpeedLimitSuggestion;
-import org.openstreetmap.josm.plugins.tigerreview.SurfaceAnalyzer.SurfaceSuggestion;
-import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataCache;
-import org.openstreetmap.josm.plugins.tigerreview.external.MapillaryDataLoader;
+import org.openstreetmap.josm.plugins.tigerreview.AlignmentAnalyzer.AlignmentResult;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataCache;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadDataLoader;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.PreferenceChangeEvent;
 import org.openstreetmap.josm.tools.ImageProvider;
+import org.openstreetmap.josm.tools.Logging;
 import org.openstreetmap.josm.tools.Shortcut;
 
 /**
- * Side panel for TIGER review and surface suggestion results.
+ * Side panel for TIGER review results.
  *
- * Uses a tabbed layout to separate TIGER review results from surface
- * suggestions. Each tab uses an independent analyzer and provides
- * Fix / Fix All controls.
+ * Uses a tabbed layout: Bulk Review (multi-road analysis with name corroboration)
+ * and Single Review (per-road alignment worklist). Each tab uses an independent
+ * analyzer and provides Fix / Fix All controls.
  */
 public class TIGERReviewDialog extends ToggleDialog
         implements ActiveLayerChangeListener, DataSelectionListener, CommandQueuePreciseListener {
 
     private final JTabbedPane tabbedPane;
 
-    // TIGER review tab
+    // Bulk Review tab
     private final DefaultMutableTreeNode tigerRoot;
     private final JTree tigerTree;
 
-    // Surface suggestions tab
-    private final DefaultMutableTreeNode surfaceRoot;
-    private final JTree surfaceTree;
+    // Single Review (alignment) tab
+    private final DefaultMutableTreeNode alignmentRoot;
+    private final JTree alignmentTree;
+    private final AlignmentTaggingPanel taggingPanel;
 
-    // Speed limit tab
-    private final DefaultMutableTreeNode speedLimitRoot;
-    private final JTree speedLimitTree;
-
+    /** All TIGER results from the last analyze. Partitioned at render time by {@link #routesToSingleReview(int)}. */
     private List<ReviewResult> tigerResults = new ArrayList<>();
-    private List<SurfaceSuggestion> surfaceResults = new ArrayList<>();
-    private List<SpeedLimitSuggestion> speedLimitResults = new ArrayList<>();
+    private List<AlignmentResult> alignmentResults = new ArrayList<>();
+    private List<MissingTagAnalyzer.MissingTagResult> missingTagResults = new ArrayList<>();
 
     private final AbstractAction analyzeAction;
     private final AbstractAction fixAction;
@@ -97,6 +97,32 @@ public class TIGERReviewDialog extends ToggleDialog
 
     /** Track running analysis to avoid concurrent runs */
     private SwingWorker<Void, Void> currentWorker;
+
+    /**
+     * After a fix-then-reanalyze cycle, the leaf index to select in the active tab.
+     * -1 means no pending selection (normal analyze). The index refers to a flat
+     * enumeration of leaf nodes across all category groups in the active tree.
+     */
+    private int pendingLeafIndex = -1;
+
+    /** Which tab index the pending selection targets (so we select in the right tree). */
+    private int pendingTabIndex = -1;
+
+    /** Sort mode for the Alignment tab tree. */
+    enum AlignmentSortMode {
+        NAME, LENGTH, NODE_COUNT
+    }
+
+    private AlignmentSortMode alignmentSortMode = AlignmentSortMode.NAME;
+    private boolean alignmentSortReversed;
+
+    /**
+     * Session-wide overwrite decisions keyed by tag key. Set by the user via the
+     * "remember choice" checkbox in the conflict confirmation dialog. true =
+     * silently overwrite future conflicts on this tag, false = silently skip.
+     * Absent key = ask again. Cleared on dialog recreation (i.e., per JOSM session).
+     */
+    private final Map<String, Boolean> rememberedConflictChoices = new java.util.HashMap<>();
 
     public TIGERReviewDialog() {
         super(
@@ -111,23 +137,31 @@ public class TIGERReviewDialog extends ToggleDialog
             150
         );
 
-        // --- TIGER review tree ---
+        // --- Bulk Review tree ---
         tigerRoot = new DefaultMutableTreeNode("Results");
         tigerTree = createResultTree(tigerRoot);
 
-        // --- Surface suggestions tree ---
-        surfaceRoot = new DefaultMutableTreeNode("Results");
-        surfaceTree = createResultTree(surfaceRoot);
+        // --- Single Review (alignment) tree + tagging panel ---
+        alignmentRoot = new DefaultMutableTreeNode("Results");
+        alignmentTree = createResultTree(alignmentRoot);
+        alignmentTree.setComponentPopupMenu(createAlignmentSortMenu());
+        taggingPanel = new AlignmentTaggingPanel();
+        taggingPanel.setApplyCallback(tags -> applyAlignmentTagsAndFix(tags));
+        // Tagging panel is meaningful only when the selection contains at least one
+        // alignment-review row. Disable it when the user has only TIGER name-suggestion
+        // rows highlighted, so the surface/lanes buttons don't accidentally tag a road
+        // the user just meant to rename.
+        alignmentTree.addTreeSelectionListener(e -> updateTaggingPanelState());
 
-        // --- Speed limit tree ---
-        speedLimitRoot = new DefaultMutableTreeNode("Results");
-        speedLimitTree = createResultTree(speedLimitRoot);
+        JSplitPane alignmentSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
+                new JScrollPane(alignmentTree), taggingPanel);
+        alignmentSplit.setResizeWeight(1.0); // tree gets extra space
+        alignmentSplit.setDividerSize(4);
 
         // --- Tabbed pane ---
         tabbedPane = new JTabbedPane();
-        tabbedPane.addTab(tr("TIGER Review"), new JScrollPane(tigerTree));
-        tabbedPane.addTab(tr("Surface"), new JScrollPane(surfaceTree));
-        tabbedPane.addTab(tr("Speed Limit"), new JScrollPane(speedLimitTree));
+        tabbedPane.addTab(tr("Bulk Review"), new JScrollPane(tigerTree));
+        tabbedPane.addTab(tr("Single Review"), alignmentSplit);
         tabbedPane.addChangeListener(e -> updateButtonState());
 
         // --- Actions ---
@@ -137,6 +171,8 @@ public class TIGERReviewDialog extends ToggleDialog
                 analyze();
             }
         };
+        analyzeAction.putValue(javax.swing.Action.SHORT_DESCRIPTION,
+                tr("Scan the current data layer and populate both review tabs"));
         new ImageProvider("dialogs", "refresh").getResource().attachImageIcon(analyzeAction, true);
 
         fixAction = new AbstractAction(tr("Fix")) {
@@ -145,6 +181,9 @@ public class TIGERReviewDialog extends ToggleDialog
                 fixSelected();
             }
         };
+        fixAction.putValue(javax.swing.Action.SHORT_DESCRIPTION,
+                tr("Apply each selected row''s fix (rename, set tiger:reviewed, remove tiger tags, etc.). "
+                   + "On Single Review, also adds any surface/lanes selected in the tagging panel."));
         new ImageProvider("dialogs", "fix").getResource().attachImageIcon(fixAction, true);
 
         createLayout(tabbedPane, false, Arrays.asList(
@@ -209,31 +248,56 @@ public class TIGERReviewDialog extends ToggleDialog
     // --- Tab helpers ---
 
     private JTree getActiveTree() {
-        return switch (tabbedPane.getSelectedIndex()) {
-            case 1 -> surfaceTree;
-            case 2 -> speedLimitTree;
-            default -> tigerTree;
-        };
+        return tabbedPane.getSelectedIndex() == 1 ? alignmentTree : tigerTree;
     }
 
     private DefaultMutableTreeNode getActiveRoot() {
-        return switch (tabbedPane.getSelectedIndex()) {
-            case 1 -> surfaceRoot;
-            case 2 -> speedLimitRoot;
-            default -> tigerRoot;
-        };
+        return tabbedPane.getSelectedIndex() == 1 ? alignmentRoot : tigerRoot;
     }
 
     private List<? extends TreeDisplayable> getActiveResults() {
-        return switch (tabbedPane.getSelectedIndex()) {
-            case 1 -> surfaceResults;
-            case 2 -> speedLimitResults;
-            default -> tigerResults;
-        };
+        if (tabbedPane.getSelectedIndex() == 1) {
+            return buildSingleReviewResults();
+        }
+        return bulkReviewSlice();
     }
 
     private boolean hasAnyResults() {
-        return !tigerResults.isEmpty() || !surfaceResults.isEmpty() || !speedLimitResults.isEmpty();
+        return !tigerResults.isEmpty() || !alignmentResults.isEmpty() || !missingTagResults.isEmpty();
+    }
+
+    /** Union of all rows that should appear in the Single Review tab. */
+    private List<TreeDisplayable> buildSingleReviewResults() {
+        List<TreeDisplayable> out = new ArrayList<>();
+        out.addAll(alignmentResults);
+        out.addAll(singleReviewSlice());
+        out.addAll(missingTagResults);
+        return out;
+    }
+
+    /**
+     * Codes that belong in the Single Review tab. Other TIGER codes stay in Bulk Review.
+     * Delegates to {@link TIGERReviewTest#belongsInBulkReview(ReviewResult)} so the
+     * side panel and the JOSM validator never drift on what counts as bulk-actionable.
+     */
+    private static boolean routesToSingleReview(ReviewResult rr) {
+        return !TIGERReviewTest.belongsInBulkReview(rr);
+    }
+
+    private List<ReviewResult> bulkReviewSlice() {
+        List<ReviewResult> out = new ArrayList<>(tigerResults.size());
+        for (ReviewResult rr : tigerResults) {
+            if (!routesToSingleReview(rr)) out.add(rr);
+        }
+        return out;
+    }
+
+    private List<ReviewResult> singleReviewSlice() {
+        List<ReviewResult> out = new ArrayList<>();
+        for (ReviewResult rr : tigerResults) {
+            if (routesToSingleReview(rr)) out.add(rr);
+        }
+        return out;
     }
 
     // --- Analysis ---
@@ -258,8 +322,8 @@ public class TIGERReviewDialog extends ToggleDialog
 
         currentWorker = new SwingWorker<Void, Void>() {
             private List<ReviewResult> tigerRes;
-            private List<SurfaceSuggestion> surfaceRes;
-            private List<SpeedLimitSuggestion> speedLimitRes;
+            private List<AlignmentResult> alignmentRes;
+            private List<MissingTagAnalyzer.MissingTagResult> missingRes;
             private long analysisMs;
 
             @Override
@@ -269,21 +333,16 @@ public class TIGERReviewDialog extends ToggleDialog
                         && !NadDataCache.getInstance().isReady()) {
                     NadDataLoader.getInstance().loadForDataSetSync(ds);
                 }
-                // Load Mapillary data synchronously before analysis if needed
-                if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)
-                        && !MapillaryDataCache.getInstance().isReady()) {
-                    MapillaryDataLoader.getInstance().loadForDataSetSync(ds);
-                }
                 long startTime = System.nanoTime();
                 TIGERReviewAnalyzer.AnalysisResult tigerAnalysis =
                         TIGERReviewAnalyzer.analyzeAllTimed(ds);
                 tigerRes = tigerAnalysis.getResults();
-                SurfaceAnalyzer.SurfaceAnalysisResult surfaceAnalysis =
-                        SurfaceAnalyzer.analyzeAllTimed(ds);
-                surfaceRes = surfaceAnalysis.getResults();
-                SpeedLimitAnalyzer.SpeedLimitAnalysisResult speedLimitAnalysis =
-                        SpeedLimitAnalyzer.analyzeAllTimed(ds);
-                speedLimitRes = speedLimitAnalysis.getResults();
+                AlignmentAnalyzer.AlignmentAnalysisResult alignmentAnalysis =
+                        AlignmentAnalyzer.analyzeAllTimed(ds);
+                alignmentRes = alignmentAnalysis.getResults();
+                MissingTagAnalyzer.MissingTagAnalysisResult missingAnalysis =
+                        MissingTagAnalyzer.analyzeAllTimed(ds);
+                missingRes = missingAnalysis.getResults();
                 analysisMs = (System.nanoTime() - startTime) / 1_000_000;
                 return null;
             }
@@ -291,16 +350,23 @@ public class TIGERReviewDialog extends ToggleDialog
             @Override
             protected void done() {
                 try {
+                    get(); // Surface any doInBackground() exception
                     if (!isCancelled()) {
                         tigerResults = tigerRes;
-                        surfaceResults = surfaceRes;
-                        speedLimitResults = speedLimitRes;
+                        alignmentResults = alignmentRes;
+                        missingTagResults = missingRes;
                         rebuildTrees();
+                        applyPendingSelection();
                         setTitle(buildTitle(
-                                tigerResults.size() + surfaceResults.size() + speedLimitResults.size(),
+                                tigerResults.size() + alignmentResults.size() + missingTagResults.size(),
                                 analysisMs));
                     }
+                } catch (java.util.concurrent.CancellationException ex) {
+                    // Worker was cancelled — no error to report
+                    clearResults();
                 } catch (Exception ex) {
+                    Logging.error("TIGER ROAR analysis failed: " + ex.getMessage());
+                    Logging.error(ex);
                     clearResults();
                     setTitle(tr("TIGER ROAR: error"));
                 } finally {
@@ -314,8 +380,8 @@ public class TIGERReviewDialog extends ToggleDialog
 
     private void clearResults() {
         tigerResults = new ArrayList<>();
-        surfaceResults = new ArrayList<>();
-        speedLimitResults = new ArrayList<>();
+        alignmentResults = new ArrayList<>();
+        missingTagResults = new ArrayList<>();
         rebuildTrees();
         setTitle(tr("TIGER ROAR"));
         updateButtonState();
@@ -327,49 +393,190 @@ public class TIGERReviewDialog extends ToggleDialog
      * Rebuild both trees and update tab titles with counts.
      */
     private void rebuildTrees() {
-        rebuildSingleTree(tigerRoot, tigerTree, tigerResults);
-        rebuildSingleTree(surfaceRoot, surfaceTree, surfaceResults);
-        rebuildSingleTree(speedLimitRoot, speedLimitTree, speedLimitResults);
+        rebuildSingleTree(tigerRoot, tigerTree, bulkReviewSlice(), null);
+        rebuildSingleTree(alignmentRoot, alignmentTree, buildSingleReviewResults(),
+                getAlignmentComparator(), TIGERReviewDialog::singleReviewTopBucket);
         updateTabTitles();
     }
 
-    private void rebuildSingleTree(DefaultMutableTreeNode root, JTree tree,
-            List<? extends TreeDisplayable> results) {
-        // Save expanded state of category nodes by group message
-        Set<String> collapsedGroups = new HashSet<>();
-        for (int i = 0; i < root.getChildCount(); i++) {
-            DefaultMutableTreeNode categoryNode = (DefaultMutableTreeNode) root.getChildAt(i);
-            String label = categoryNode.getUserObject().toString();
-            // Strip the count suffix " (N)" to get the group key
-            String groupKey = label.replaceAll(" \\(\\d+\\)$", "");
-            TreePath path = new TreePath(new Object[]{root, categoryNode});
-            if (tree.isCollapsed(path)) {
-                collapsedGroups.add(groupKey);
-            }
+    /**
+     * Top-level bucket name for a Single Review category, or null to render flat
+     * at the tree root.
+     *
+     * <p>TIGER-related categories nest under one "TIGER Review" parent.
+     * Missing-tag worklists ({@code Missing surface}, {@code Missing lanes}) and
+     * any future non-TIGER worklists render at the root.
+     */
+    private static String singleReviewTopBucket(String categoryGroup) {
+        if (categoryGroup == null) return null;
+        if (tr("Missing surface").equals(categoryGroup)
+                || tr("Missing lanes").equals(categoryGroup)) {
+            return null;
         }
+        return tr("TIGER Review");
+    }
+
+    private void rebuildSingleTree(DefaultMutableTreeNode root, JTree tree,
+            List<? extends TreeDisplayable> results,
+            java.util.Comparator<TreeDisplayable> customSort) {
+        rebuildSingleTree(root, tree, results, customSort, null);
+    }
+
+    /**
+     * Rebuild a tree from a flat list of {@link TreeDisplayable} results.
+     *
+     * <p>Always groups results by {@link TreeDisplayable#getGroupMessage()} into
+     * category nodes. When {@code topGrouper} is non-null, category nodes whose
+     * group name maps to a non-null bucket are nested under a parent node for
+     * that bucket; categories that map to null render flat at the root.
+     *
+     * @param topGrouper maps a category's group message to a top-level bucket
+     *                   name (null means render the category at the root)
+     */
+    private void rebuildSingleTree(DefaultMutableTreeNode root, JTree tree,
+            List<? extends TreeDisplayable> results,
+            java.util.Comparator<TreeDisplayable> customSort,
+            java.util.function.Function<String, String> topGrouper) {
+        // Save expanded state of every non-leaf node by its label sans count suffix
+        Set<String> collapsedGroups = new HashSet<>();
+        captureCollapsedState(root, tree, collapsedGroups);
         boolean hadChildren = root.getChildCount() > 0;
 
         root.removeAllChildren();
 
-        // Group results by groupMessage
+        // Group results by category groupMessage
         Map<String, List<TreeDisplayable>> grouped = new LinkedHashMap<>();
         for (TreeDisplayable result : results) {
             grouped.computeIfAbsent(result.getGroupMessage(), k -> new ArrayList<>()).add(result);
         }
 
-        // Sort groups by priority (most complete/actionable first)
+        // Sort categories by priority (most complete/actionable first). Use the
+        // minimum priority across the group's items so a stray item with a fallback
+        // priority can't drag the whole group to the bottom.
         List<Map.Entry<String, List<TreeDisplayable>>> sortedGroups = new ArrayList<>(grouped.entrySet());
         sortedGroups.sort((a, b) -> {
-            int pa = getGroupPriority(a.getValue().get(0));
-            int pb = getGroupPriority(b.getValue().get(0));
+            int pa = a.getValue().stream().mapToInt(TIGERReviewDialog::getGroupPriority).min().orElse(99);
+            int pb = b.getValue().stream().mapToInt(TIGERReviewDialog::getGroupPriority).min().orElse(99);
             return Integer.compare(pa, pb);
         });
+
+        // Bucket categories by top-level group while preserving sorted order
+        Map<String, DefaultMutableTreeNode> topBuckets = new LinkedHashMap<>();
 
         for (Map.Entry<String, List<TreeDisplayable>> entry : sortedGroups) {
             DefaultMutableTreeNode categoryNode = new DefaultMutableTreeNode(
                     entry.getKey() + " (" + entry.getValue().size() + ")");
             List<TreeDisplayable> sorted = new ArrayList<>(entry.getValue());
-            sorted.sort((a, b) -> {
+            if (customSort != null) {
+                sorted.sort(customSort);
+            } else {
+                sorted.sort(defaultNameComparator());
+            }
+            for (TreeDisplayable result : sorted) {
+                categoryNode.add(new DefaultMutableTreeNode(result));
+            }
+
+            String topBucket = topGrouper == null ? null : topGrouper.apply(entry.getKey());
+            if (topBucket == null) {
+                root.add(categoryNode);
+            } else {
+                DefaultMutableTreeNode parent = topBuckets.computeIfAbsent(topBucket,
+                        k -> new DefaultMutableTreeNode(k));
+                parent.add(categoryNode);
+                // Append parent to root the first time we see it (preserves first-seen order)
+                if (parent.getParent() == null) {
+                    root.add(parent);
+                }
+            }
+        }
+
+        // Replace top-bucket labels with their final counts
+        for (Map.Entry<String, DefaultMutableTreeNode> entry : topBuckets.entrySet()) {
+            int leafTotal = 0;
+            for (int i = 0; i < entry.getValue().getChildCount(); i++) {
+                leafTotal += entry.getValue().getChildAt(i).getChildCount();
+            }
+            entry.getValue().setUserObject(entry.getKey() + " (" + leafTotal + ")");
+        }
+
+        ((DefaultTreeModel) tree.getModel()).reload();
+        restoreExpansionState(root, tree, collapsedGroups, hadChildren);
+    }
+
+    private static java.util.Comparator<TreeDisplayable> defaultNameComparator() {
+        return (a, b) -> {
+            String nameA = a.getWay().get("name");
+            String nameB = b.getWay().get("name");
+            if (nameA != null && nameB != null) {
+                return nameA.compareToIgnoreCase(nameB);
+            }
+            if (nameA != null) return -1;
+            if (nameB != null) return 1;
+            return Long.compare(a.getWay().getId(), b.getWay().getId());
+        };
+    }
+
+    /** Strip a " (N)" count suffix from a node label to get a stable key. */
+    private static String groupKeyOf(DefaultMutableTreeNode node) {
+        return node.getUserObject().toString().replaceAll(" \\(\\d+\\)$", "");
+    }
+
+    private static void captureCollapsedState(DefaultMutableTreeNode node, JTree tree, Set<String> out) {
+        for (int i = 0; i < node.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
+            if (child.isLeaf()) continue;
+            TreePath path = new TreePath(child.getPath());
+            if (tree.isCollapsed(path)) out.add(groupKeyOf(child));
+            captureCollapsedState(child, tree, out);
+        }
+    }
+
+    private static void restoreExpansionState(DefaultMutableTreeNode node, JTree tree,
+            Set<String> collapsedGroups, boolean hadChildren) {
+        for (int i = 0; i < node.getChildCount(); i++) {
+            DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
+            if (child.isLeaf()) continue;
+            TreePath path = new TreePath(child.getPath());
+            if (!hadChildren || !collapsedGroups.contains(groupKeyOf(child))) {
+                tree.expandPath(path);
+            }
+            restoreExpansionState(child, tree, collapsedGroups, hadChildren);
+        }
+    }
+
+    /** Apply {@code action} to every leaf under {@code node} in tree order. */
+    private static void forEachLeaf(DefaultMutableTreeNode node,
+            java.util.function.Consumer<DefaultMutableTreeNode> action) {
+        if (node.isLeaf()) {
+            action.accept(node);
+            return;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            forEachLeaf((DefaultMutableTreeNode) node.getChildAt(i), action);
+        }
+    }
+
+    private void updateTabTitles() {
+        String arrow = alignmentSortReversed ? "\u25BC" : "\u25B2";
+        String sortLabel = switch (alignmentSortMode) {
+            case LENGTH -> tr("length {0}", arrow);
+            case NODE_COUNT -> tr("nodes {0}", arrow);
+            default -> tr("name {0}", arrow);
+        };
+        int bulkCount = bulkReviewSlice().size();
+        int singleCount = buildSingleReviewResults().size();
+        tabbedPane.setTitleAt(0, tr("Bulk Review ({0})", bulkCount));
+        tabbedPane.setTitleAt(1, tr("Single Review ({0}, {1})", singleCount, sortLabel));
+    }
+
+    /**
+     * Build a comparator for the alignment tree based on the current sort mode and direction.
+     */
+    private java.util.Comparator<TreeDisplayable> getAlignmentComparator() {
+        java.util.Comparator<TreeDisplayable> cmp = switch (alignmentSortMode) {
+            case LENGTH -> (a, b) -> Double.compare(a.getWay().getLength(), b.getWay().getLength());
+            case NODE_COUNT -> (a, b) -> Integer.compare(a.getWay().getNodesCount(), b.getWay().getNodesCount());
+            default -> (a, b) -> {
                 String nameA = a.getWay().get("name");
                 String nameB = b.getWay().get("name");
                 if (nameA != null && nameB != null) {
@@ -378,74 +585,104 @@ public class TIGERReviewDialog extends ToggleDialog
                 if (nameA != null) return -1;
                 if (nameB != null) return 1;
                 return Long.compare(a.getWay().getId(), b.getWay().getId());
-            });
-            for (TreeDisplayable result : sorted) {
-                categoryNode.add(new DefaultMutableTreeNode(result));
-            }
-            root.add(categoryNode);
-        }
-
-        ((DefaultTreeModel) tree.getModel()).reload();
-
-        // Restore expansion state: expand all by default on first build,
-        // otherwise restore previous collapsed/expanded state
-        for (int i = 0; i < root.getChildCount(); i++) {
-            DefaultMutableTreeNode categoryNode = (DefaultMutableTreeNode) root.getChildAt(i);
-            String label = categoryNode.getUserObject().toString();
-            String groupKey = label.replaceAll(" \\(\\d+\\)$", "");
-            TreePath path = new TreePath(new Object[]{root, categoryNode});
-            if (!hadChildren || !collapsedGroups.contains(groupKey)) {
-                tree.expandPath(path);
-            }
-        }
-    }
-
-    private void updateTabTitles() {
-        tabbedPane.setTitleAt(0, tr("TIGER Review ({0})", tigerResults.size()));
-        tabbedPane.setTitleAt(1, tr("Surface ({0})", surfaceResults.size()));
-        tabbedPane.setTitleAt(2, tr("Speed Limit ({0})", speedLimitResults.size()));
+            };
+        };
+        return alignmentSortReversed ? cmp.reversed() : cmp;
     }
 
     /**
-     * Priority for sorting groups in the tree.
-     * Lower number = higher in the list.
+     * Create the right-click context menu for the alignment tree.
+     * Rebuilds items on each show so labels reflect current state.
+     */
+    private JPopupMenu createAlignmentSortMenu() {
+        JPopupMenu menu = new JPopupMenu() {
+            @Override
+            public void show(java.awt.Component invoker, int x, int y) {
+                removeAll();
+                addSortItem(this, tr("name"), AlignmentSortMode.NAME);
+                addSortItem(this, tr("length"), AlignmentSortMode.LENGTH);
+                addSortItem(this, tr("node count"), AlignmentSortMode.NODE_COUNT);
+                super.show(invoker, x, y);
+            }
+        };
+        return menu;
+    }
+
+    private void addSortItem(JPopupMenu menu, String label, AlignmentSortMode mode) {
+        if (alignmentSortMode == mode) {
+            // Currently sorted by this — offer to reverse
+            String direction = alignmentSortReversed ? tr("ascending") : tr("descending");
+            JMenuItem item = new JMenuItem(tr("Sort by {0} ({1})", label, direction));
+            item.addActionListener(e -> {
+                alignmentSortReversed = !alignmentSortReversed;
+                rebuildAlignmentTree();
+            });
+            menu.add(item);
+        } else {
+            JMenuItem item = new JMenuItem(tr("Sort by {0}", label));
+            item.addActionListener(e -> {
+                alignmentSortMode = mode;
+                alignmentSortReversed = false;
+                rebuildAlignmentTree();
+            });
+            menu.add(item);
+        }
+    }
+
+    private void rebuildAlignmentTree() {
+        rebuildSingleTree(alignmentRoot, alignmentTree, buildSingleReviewResults(),
+                getAlignmentComparator(), TIGERReviewDialog::singleReviewTopBucket);
+        updateTabTitles();
+    }
+
+    /**
+     * Priority for sorting groups in the tree. Lower number = higher in the list.
+     * Both tabs draw from the same priority numbering; {@link #routesToSingleReview}
+     * decides which tab each item lands on, and the priorities then order the
+     * resulting subset.
      *
-     * TIGER Review tab ordering:
+     * Bulk Review tab (priorities used, in order):
      *   0  Residual TIGER tags (trivial cleanup)
      *   1  Unnamed road verified (trivial, no name to worry about)
      *   2  Fully verified (name + alignment, just remove tag)
      *   3  Name upgrade (was name-only, alignment now confirmed)
-     *   4  Name verified, alignment needs review (fix sets tiger:reviewed=name)
      *   5  Invalid tiger:reviewed value (needs manual attention)
-     *   6  Combined directional upgrade (NAD + addresses agree, high confidence)
-     *   7  Individual directional upgrades (prefix/suffix addition)
-     *   8  Combined name suggestion (NAD + addresses agree, informational)
-     *   9  Individual name suggestions (informational)
      *  10  Alignment verified, name not corroborated (fix sets tiger:reviewed=aerial)
      *
-     * Surface tab ordering:
-     *   0-5  Surface suggestions by confidence (high to low)
-     *   6    Surface conflict (informational)
-     *
-     * Speed Limit tab ordering:
-     *   0-3  Speed suggestions by confidence (high to low)
+     * Single Review tab (priorities used, in order):
+     *   0  Name verified, check alignment (AlignmentAnalyzer worklist) [under TIGER Review]
+     *   1  Unnamed roads (AlignmentAnalyzer worklist)                  [under TIGER Review]
+     *   4  Name verified, alignment needs review (SET_NAME_REVIEWED)   [under TIGER Review]
+     *   6  Combined directional upgrade                                 [under TIGER Review]
+     *   7  Individual directional upgrades                              [under TIGER Review]
+     *   8  Combined name suggestion                                     [under TIGER Review]
+     *   9  Individual name suggestions                                  [under TIGER Review]
+     *  20  Missing surface (any vehicular road)                         [root level]
+     *  21  Missing lanes (any vehicular road)                           [root level]
      */
     private static int getGroupPriority(TreeDisplayable result) {
         int code = result.getCode();
 
-        // --- TIGER Review tab ---
+        // --- AlignmentAnalyzer codes (Single Review only) ---
+
+        if (code == AlignmentAnalyzer.ALIGNMENT_NAME_REVIEWED) return 0;
+        if (code == AlignmentAnalyzer.ALIGNMENT_UNNAMED_UNREVIEWED) return 1;
+
+        // --- TIGERReviewAnalyzer codes (routed to either tab) ---
 
         if (code == TIGERReviewTest.TIGER_RESIDUAL_TAGS) return 0;
         if (code == TIGERReviewTest.TIGER_UNNAMED_VERIFIED) return 1;
 
         // Fully verified and name-only share warning codes; distinguish by fix action
         if (code == TIGERReviewTest.TIGER_FULLY_VERIFIED
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_BOTH_ENDS
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ONE_END
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ADDRESS
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_NAD
                 || code == TIGERReviewTest.TIGER_NAME_VERIFIED_ETYMOLOGY
-                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT) {
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_USER_EDIT
+                || code == TIGERReviewTest.TIGER_NAME_VERIFIED_DUAL_CARRIAGEWAY) {
             if (result instanceof ReviewResult rr
                     && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.REMOVE_TAG) {
                 return 2; // Fully verified
@@ -462,24 +699,10 @@ public class TIGERReviewDialog extends ToggleDialog
                 || code == TIGERReviewTest.TIGER_ADDRESS_NAME_SUGGESTION) return 9;
         if (code == TIGERReviewTest.TIGER_NAME_NOT_CORROBORATED) return 10;
 
-        // --- Surface tab ---
+        // --- General Review (non-TIGER worklists, Single Review only) ---
 
-        if (code == SurfaceTest.SURFACE_CONNECTED_ROAD) return 0;
-        if (code == SurfaceTest.SURFACE_CONNECTED_ROAD_UPGRADE) return 1;
-        if (code == SurfaceTest.SURFACE_CROSSING) return 2;
-        if (code == SurfaceTest.SURFACE_CROSSING_UPGRADE) return 3;
-        if (code == SurfaceTest.SURFACE_PARKING_AREA) return 4;
-        if (code == SurfaceTest.SURFACE_PARKING_AREA_UPGRADE) return 5;
-        if (code == SurfaceTest.SURFACE_LANES_PAVED) return 6;
-        if (code == SurfaceTest.SURFACE_LANES_CONFLICT) return 7;
-        if (code == SurfaceTest.SURFACE_CONFLICT) return 8;
-
-        // --- Speed Limit tab ---
-
-        if (code == SpeedLimitTest.SPEED_MISSING_MULTI_SIGN) return 0;
-        if (code == SpeedLimitTest.SPEED_MISSING) return 1;
-        if (code == SpeedLimitTest.SPEED_CONFLICT_MULTI_SIGN) return 2;
-        if (code == SpeedLimitTest.SPEED_CONFLICT) return 3;
+        if (code == MissingTagAnalyzer.MISSING_SURFACE) return 20;
+        if (code == MissingTagAnalyzer.MISSING_LANES) return 21;
 
         return 99;
     }
@@ -488,9 +711,11 @@ public class TIGERReviewDialog extends ToggleDialog
 
     /**
      * Fix selected items in the active tab. If a category node is selected, fix all its children.
+     * After fixing and re-analyzing, selects the next item after the fixed ones.
      */
     private void fixSelected() {
-        List<TreeDisplayable> toFix = getSelectedResultsFromTree(getActiveTree());
+        JTree activeTree = getActiveTree();
+        List<TreeDisplayable> toFix = getSelectedResultsFromTree(activeTree);
         if (toFix.isEmpty()) return;
 
         // If selection spans multiple categories, confirm with the user
@@ -510,7 +735,289 @@ public class TIGERReviewDialog extends ToggleDialog
             }
         }
 
+        // Compute the next leaf index to select after fix + re-analyze
+        pendingLeafIndex = computeNextLeafIndex(activeTree, getActiveRoot(), toFix);
+        pendingTabIndex = tabbedPane.getSelectedIndex();
+
+        // Single Review tab hosts three kinds of items:
+        //   - AlignmentResult:  blind alignment review, apply panel tags + remove tiger tags
+        //   - ReviewResult:     per-road name fixes; if the panel has tags selected,
+        //                       combine them with the row's fix; otherwise use the row's
+        //                       own fix supplier
+        //   - MissingTagResult: only the panel tags apply (no tiger:* manipulation).
+        //                       Without panel tags there's nothing to do, so skip.
+        if (tabbedPane.getSelectedIndex() == 1) {
+            Map<String, String> panelTags = taggingPanel.getSelectedTags();
+            List<TreeDisplayable> taggedItems = new ArrayList<>();
+            List<TreeDisplayable> reviewItems = new ArrayList<>();
+            for (TreeDisplayable item : toFix) {
+                if (item instanceof MissingTagAnalyzer.MissingTagResult) {
+                    if (!panelTags.isEmpty()) taggedItems.add(item);
+                    continue;
+                }
+                if (item instanceof AlignmentResult || !panelTags.isEmpty()) {
+                    // AlignmentResult always uses the tagging path (even with empty tags
+                    // it removes tiger tags). ReviewResult uses it only when the user
+                    // has panel tags selected, so the rename + tags + tiger-strip happen
+                    // together.
+                    taggedItems.add(item);
+                } else {
+                    reviewItems.add(item);
+                }
+            }
+            if (!taggedItems.isEmpty()) {
+                applyAlignmentTagsAndFix(panelTags, taggedItems);
+            }
+            if (!reviewItems.isEmpty()) {
+                applyFixes(reviewItems);
+            }
+            return;
+        }
+
         applyFixes(toFix);
+    }
+
+    /**
+     * Find the flat leaf index of the first leaf node that comes after all
+     * selected/fixed items. If no such leaf exists, returns 0 (first item).
+     */
+    private int computeNextLeafIndex(JTree tree, DefaultMutableTreeNode root,
+                                      List<TreeDisplayable> fixedItems) {
+        Set<Way> fixedWays = new HashSet<>();
+        for (TreeDisplayable item : fixedItems) {
+            fixedWays.add(item.getWay());
+        }
+
+        int[] leafIndex = {0};
+        int[] maxFixedIndex = {-1};
+        forEachLeaf(root, leaf -> {
+            if (leaf.getUserObject() instanceof TreeDisplayable result
+                    && fixedWays.contains(result.getWay())) {
+                maxFixedIndex[0] = leafIndex[0];
+            }
+            leafIndex[0]++;
+        });
+
+        // The next item after the last fixed one. Since the fixed items will be
+        // removed, the item that was at (maxFixedIndex + 1) will shift down by
+        // the number of fixed items at or before that position. But we don't know
+        // exactly how many will be removed (cascading, etc.), so we count how many
+        // non-fixed items precede the target position instead.
+        int targetOriginalIndex = maxFixedIndex[0] + 1;
+        int[] nonFixedCount = {0};
+        int[] currentLeaf = {0};
+        int[] result = {-1};
+
+        forEachLeaf(root, leaf -> {
+            if (result[0] >= 0) return; // Already found
+            boolean isFixed = leaf.getUserObject() instanceof TreeDisplayable td
+                    && fixedWays.contains(td.getWay());
+            if (!isFixed && currentLeaf[0] >= targetOriginalIndex) {
+                result[0] = nonFixedCount[0];
+                return;
+            }
+            if (!isFixed) nonFixedCount[0]++;
+            currentLeaf[0]++;
+        });
+
+        // All items after the last fixed one were also fixed; wrap to top
+        return result[0] >= 0 ? result[0] : 0;
+    }
+
+    /**
+     * Apply panel tags (surface, lanes, etc.) to the current Single Review selection.
+     * Called from the {@link AlignmentTaggingPanel} quick-tag buttons.
+     *
+     * @param tags map of tag key to value (empty map = remove tiger tags only)
+     */
+    private void applyAlignmentTagsAndFix(Map<String, String> tags) {
+        applyAlignmentTagsAndFix(tags, getSelectedResultsFromTree(alignmentTree));
+    }
+
+    /**
+     * Apply panel tags + the row-appropriate tiger-tag mutation to each item.
+     *
+     * <p>Behavior per item type:
+     * <ul>
+     *   <li>{@link AlignmentResult}: apply panel tags, remove all tiger:* tags.</li>
+     *   <li>{@link ReviewResult} with SUGGEST_NAME: apply panel tags, rename to the
+     *       suggested name, then remove all tiger:* tags (the user is reviewing the
+     *       road completely by adding alignment-relevant tags).</li>
+     *   <li>{@link ReviewResult} other actions: apply panel tags, then remove all
+     *       tiger:* tags (the panel-tag click is itself an alignment-review action).</li>
+     *   <li>{@link MissingTagAnalyzer.MissingTagResult}: apply panel tags only. Do
+     *       not touch tiger:* tags &mdash; these are non-TIGER worklist rows.</li>
+     * </ul>
+     *
+     * <p>If applying a panel tag would overwrite an incompatible existing value on
+     * a way, the user is prompted with a "remember choice" checkbox. The decision
+     * is recorded per tag key for the remainder of the session.
+     */
+    private void applyAlignmentTagsAndFix(Map<String, String> tags, List<TreeDisplayable> toFix) {
+        if (toFix.isEmpty()) return;
+
+        // Per-tag-key conflict resolution. If any way in the selection has an
+        // incompatible existing value for a tag we're about to set, ask the user
+        // (unless they already remembered a session-wide decision).
+        Map<String, Boolean> applyTag = resolveConflicts(tags, toFix);
+
+        boolean stripTigerTags = Config.getPref().getBoolean(
+                TIGERReviewPreferences.PREF_STRIP_TIGER_TAGS, true);
+
+        List<Command> allCommands = new ArrayList<>();
+        for (TreeDisplayable result : toFix) {
+            Way way = result.getWay();
+            boolean isMissingTag = result instanceof MissingTagAnalyzer.MissingTagResult;
+
+            // 1. Apply the additional tags (surface, lanes, etc.). Skip a tag for a
+            //    way when it conflicts and the resolved decision is "no, don't overwrite".
+            for (Map.Entry<String, String> entry : tags.entrySet()) {
+                String key = entry.getKey();
+                String newVal = entry.getValue();
+                String existing = way.get(key);
+                if (existing != null && !isCompatibleValue(key, existing, newVal)
+                        && !Boolean.TRUE.equals(applyTag.get(key))) {
+                    continue; // skip conflicting tag for this way
+                }
+                allCommands.add(new ChangePropertyCommand(way, key, newVal));
+            }
+
+            // 2. For SUGGEST_NAME rows, apply the rename. (The supplier's own
+            //    tiger-tag handling is superseded by our unconditional removal below.)
+            if (result instanceof ReviewResult rr
+                    && rr.getFixAction() == TIGERReviewAnalyzer.FixAction.SUGGEST_NAME
+                    && rr.getSuggestedName() != null) {
+                allCommands.add(new ChangePropertyCommand(way, "name", rr.getSuggestedName()));
+            }
+
+            // 3. Remove tiger tags for TIGER rows. MissingTag rows leave tiger:* alone.
+            if (!isMissingTag) {
+                Command removeCmd = TIGERReviewAnalyzer.createRemoveTagCommand(way, stripTigerTags);
+                if (removeCmd != null) {
+                    allCommands.add(removeCmd);
+                }
+            }
+        }
+
+        if (allCommands.isEmpty()) return;
+
+        // Set pending selection if not already set by fixSelected()
+        if (pendingLeafIndex < 0) {
+            pendingLeafIndex = computeNextLeafIndex(alignmentTree, alignmentRoot, toFix);
+            pendingTabIndex = 1;
+        }
+
+        // Record in MRU
+        taggingPanel.recordMru(tags);
+
+        Command combined = SequenceCommand.wrapIfNeeded(
+                tr("Single Review fix + tags ({0} roads)", toFix.size()), allCommands);
+        UndoRedoHandler.getInstance().add(combined);
+
+        analyze();
+    }
+
+    /**
+     * For each tag in {@code tags}, determine whether to overwrite an incompatible
+     * existing value when a conflict is found in {@code toFix}. Returns a map from
+     * tag key to "true = overwrite, false = skip" decisions. Tags with no conflict
+     * map to {@code true} (no question to ask). Tags with conflicts consult the
+     * session-remembered choice or prompt the user.
+     */
+    private Map<String, Boolean> resolveConflicts(Map<String, String> tags,
+            List<TreeDisplayable> toFix) {
+        Map<String, Boolean> decisions = new java.util.HashMap<>();
+        for (Map.Entry<String, String> entry : tags.entrySet()) {
+            String key = entry.getKey();
+            String newVal = entry.getValue();
+
+            // Find a sample conflicting (way, existing-value) — used to phrase the prompt.
+            Way sampleWay = null;
+            String sampleExisting = null;
+            int conflictCount = 0;
+            for (TreeDisplayable item : toFix) {
+                Way way = item.getWay();
+                String existing = way.get(key);
+                if (existing != null && !isCompatibleValue(key, existing, newVal)) {
+                    if (sampleWay == null) {
+                        sampleWay = way;
+                        sampleExisting = existing;
+                    }
+                    conflictCount++;
+                }
+            }
+            if (conflictCount == 0) {
+                decisions.put(key, true); // no conflict, free to apply
+                continue;
+            }
+
+            // Session-remembered decision wins.
+            Boolean remembered = rememberedConflictChoices.get(key);
+            if (remembered != null) {
+                decisions.put(key, remembered);
+                continue;
+            }
+
+            // Prompt the user.
+            boolean overwrite = promptForConflict(key, newVal, sampleExisting, conflictCount);
+            decisions.put(key, overwrite);
+        }
+        return decisions;
+    }
+
+    /**
+     * Show a confirmation dialog asking whether to overwrite an existing tag value.
+     * The dialog includes a "remember choice for this session" checkbox; when
+     * checked, the decision is stored in {@link #rememberedConflictChoices} and
+     * applied silently to all subsequent conflicts on the same tag key.
+     *
+     * @return true if the user chose to overwrite, false to skip
+     */
+    private boolean promptForConflict(String key, String newVal, String existing, int conflictCount) {
+        String message;
+        if (conflictCount == 1) {
+            message = tr("Setting {0}={1} would overwrite the existing value {0}={2} on 1 road. Overwrite?",
+                    key, newVal, existing);
+        } else {
+            message = tr("Setting {0}={1} would overwrite incompatible existing values on {2} roads "
+                       + "(sample existing: {0}={3}). Overwrite all?",
+                    key, newVal, conflictCount, existing);
+        }
+
+        javax.swing.JCheckBox remember = new javax.swing.JCheckBox(
+                tr("Remember choice for {0}= conflicts this session", key));
+        Object[] panel = new Object[]{message, remember};
+
+        int choice = javax.swing.JOptionPane.showConfirmDialog(
+                MainApplication.getMainFrame(), panel,
+                tr("Tag conflict"),
+                javax.swing.JOptionPane.YES_NO_OPTION,
+                javax.swing.JOptionPane.WARNING_MESSAGE);
+        boolean overwrite = choice == javax.swing.JOptionPane.YES_OPTION;
+        if (remember.isSelected()) {
+            rememberedConflictChoices.put(key, overwrite);
+        }
+        return overwrite;
+    }
+
+    /**
+     * Decide whether a new tag value is compatible with an existing one. Compatible
+     * means "no conflict prompt needed":
+     * <ul>
+     *   <li>Same value (case-insensitive).</li>
+     *   <li>For surface=: the new value is a specific refinement of the existing
+     *       generic (paved &rarr; asphalt, unpaved &rarr; gravel).</li>
+     * </ul>
+     * Anything else is a conflict.
+     */
+    private static boolean isCompatibleValue(String key, String existing, String newVal) {
+        if (existing.equalsIgnoreCase(newVal)) return true;
+        if ("surface".equals(key)) {
+            // Refinement of a generic value is compatible (paved -> asphalt).
+            return org.openstreetmap.josm.plugins.tigerreview.checks.SurfaceCheck
+                    .isSameCategory(existing, newVal);
+        }
+        return false;
     }
 
     /**
@@ -526,13 +1033,12 @@ public class TIGERReviewDialog extends ToggleDialog
             if (node.getUserObject() instanceof TreeDisplayable result) {
                 results.add(result);
             } else if (!node.isLeaf()) {
-                // Category node: collect all children
-                for (int i = 0; i < node.getChildCount(); i++) {
-                    DefaultMutableTreeNode child = (DefaultMutableTreeNode) node.getChildAt(i);
-                    if (child.getUserObject() instanceof TreeDisplayable result) {
-                        results.add(result);
+                // Non-leaf (category or top-level group): collect all descendant leaves
+                forEachLeaf(node, leaf -> {
+                    if (leaf.getUserObject() instanceof TreeDisplayable td) {
+                        results.add(td);
                     }
-                }
+                });
             }
         }
         return results;
@@ -705,6 +1211,16 @@ public class TIGERReviewDialog extends ToggleDialog
     private void updateButtonState() {
         boolean hasResults = !getActiveResults().isEmpty();
         fixAction.setEnabled(hasResults);
+        updateTaggingPanelState();
+    }
+
+    /**
+     * Tagging panel is enabled whenever the Single Review tab is showing. Every
+     * row type now supports tag application (MissingTag rows just add the panel
+     * tag without touching tiger:*).
+     */
+    private void updateTaggingPanelState() {
+        taggingPanel.setTaggingEnabled(true);
     }
 
     /**
@@ -720,17 +1236,6 @@ public class TIGERReviewDialog extends ToggleDialog
                 title += " (NAD: error)";
             } else {
                 title += " (NAD: not loaded)";
-            }
-        }
-        if (Config.getPref().getBoolean(TIGERReviewPreferences.PREF_ENABLE_MAPILLARY_CHECK, false)) {
-            MapillaryDataCache cache = MapillaryDataCache.getInstance();
-            if (cache.isReady()) {
-                title += " (Mapillary: " + cache.getDetectionCount() + " signs, "
-                        + cache.getMarkingCount() + " markings)";
-            } else if (cache.getErrorMessage() != null) {
-                title += " (Mapillary: error)";
-            } else {
-                title += " (Mapillary: not loaded)";
             }
         }
         return title;
@@ -804,34 +1309,77 @@ public class TIGERReviewDialog extends ToggleDialog
 
             if (selectedWays.isEmpty()) {
                 tigerTree.clearSelection();
-                surfaceTree.clearSelection();
-                speedLimitTree.clearSelection();
+                alignmentTree.clearSelection();
                 return;
             }
 
-            // Sync all trees; only scroll the active one
+            // Sync both trees; only scroll the active one
             JTree active = getActiveTree();
             syncTreeSelection(tigerTree, tigerRoot, selectedWays, tigerTree == active);
-            syncTreeSelection(surfaceTree, surfaceRoot, selectedWays, surfaceTree == active);
-            syncTreeSelection(speedLimitTree, speedLimitRoot, selectedWays, speedLimitTree == active);
+            syncTreeSelection(alignmentTree, alignmentRoot, selectedWays, alignmentTree == active);
         } finally {
             updatingSelection = false;
         }
     }
 
+    /**
+     * If a fix operation set a pending selection, apply it now and clear the pending state.
+     * This selects the next item in the tree, syncs the JOSM map selection, and zooms to it.
+     */
+    private void applyPendingSelection() {
+        if (pendingLeafIndex < 0) return;
+        int tabIdx = pendingTabIndex;
+        int leafIdx = pendingLeafIndex;
+        pendingLeafIndex = -1;
+        pendingTabIndex = -1;
+
+        JTree tree = tabIdx == 1 ? alignmentTree : tigerTree;
+        DefaultMutableTreeNode root = tabIdx == 1 ? alignmentRoot : tigerRoot;
+
+        // Select the leaf — this triggers the tree's selection listener which
+        // syncs the JOSM map selection (ds.setSelected). Do NOT guard with
+        // updatingSelection so the listener fires normally.
+        TreeDisplayable selected = selectLeafByIndex(tree, root, leafIdx);
+
+        // Zoom the map to the newly selected way
+        if (selected != null) {
+            AutoScaleAction.zoomTo(Collections.singleton(selected.getWay()));
+        }
+    }
+
+    /**
+     * Select the leaf node at the given flat index in a tree, and scroll to it.
+     * If the index is out of range, selects the first leaf (index 0).
+     *
+     * @return the selected TreeDisplayable, or null if the tree is empty
+     */
+    private TreeDisplayable selectLeafByIndex(JTree tree, DefaultMutableTreeNode root, int leafIndex) {
+        DefaultMutableTreeNode[] firstLeaf = {null};
+        DefaultMutableTreeNode[] targetLeaf = {null};
+        int[] current = {0};
+        forEachLeaf(root, leaf -> {
+            if (firstLeaf[0] == null) firstLeaf[0] = leaf;
+            if (current[0] == leafIndex) targetLeaf[0] = leaf;
+            current[0]++;
+        });
+
+        DefaultMutableTreeNode chosen = targetLeaf[0] != null ? targetLeaf[0] : firstLeaf[0];
+        if (chosen == null) return null;
+        TreePath path = new TreePath(chosen.getPath());
+        tree.setSelectionPath(path);
+        tree.scrollPathToVisible(path);
+        return chosen.getUserObject() instanceof TreeDisplayable td ? td : null;
+    }
+
     private void syncTreeSelection(JTree tree, DefaultMutableTreeNode root,
             Set<Way> selectedWays, boolean scrollVisible) {
         List<TreePath> matchingPaths = new ArrayList<>();
-        for (int i = 0; i < root.getChildCount(); i++) {
-            DefaultMutableTreeNode category = (DefaultMutableTreeNode) root.getChildAt(i);
-            for (int j = 0; j < category.getChildCount(); j++) {
-                DefaultMutableTreeNode leaf = (DefaultMutableTreeNode) category.getChildAt(j);
-                if (leaf.getUserObject() instanceof TreeDisplayable result
-                        && selectedWays.contains(result.getWay())) {
-                    matchingPaths.add(new TreePath(leaf.getPath()));
-                }
+        forEachLeaf(root, leaf -> {
+            if (leaf.getUserObject() instanceof TreeDisplayable result
+                    && selectedWays.contains(result.getWay())) {
+                matchingPaths.add(new TreePath(leaf.getPath()));
             }
-        }
+        });
 
         if (!matchingPaths.isEmpty()) {
             tree.setSelectionPaths(matchingPaths.toArray(new TreePath[0]));
