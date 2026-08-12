@@ -60,6 +60,11 @@ public class MapillaryDataLoader extends AbstractExternalDataLoader {
     }
 
     @Override
+    protected void setCacheError(String message) {
+        MapillaryDataCache.getInstance().setError(message);
+    }
+
+    @Override
     protected boolean isRelevantWay(Way way) {
         // Mapillary needs bounds from all vehicular highway ways
         String highway = way.get("highway");

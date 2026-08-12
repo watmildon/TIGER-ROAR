@@ -32,6 +32,9 @@ public abstract class AbstractExternalDataLoader implements LayerManager.LayerCh
     /** Buffer in degrees to pad computed bounds (~100m at mid-latitudes) */
     private static final double BOUNDS_BUFFER_DEGREES = 0.001;
 
+    /** Maximum bounds area in square degrees before skipping fetch (~25km x 25km at mid-latitudes) */
+    protected static final double MAX_AREA_DEGREES = 0.25;
+
     /** Currently running loader task */
     private SwingWorker<Void, Void> currentTask;
 
@@ -162,6 +165,16 @@ public abstract class AbstractExternalDataLoader implements LayerManager.LayerCh
             return null;
         }
 
+        double area = bounds.getArea();
+        if (area > MAX_AREA_DEGREES) {
+            String message = String.format(
+                    "Area too large for %s (%.2f sq degrees > %.2f max). Download a smaller area.",
+                    getLoaderName(), area, MAX_AREA_DEGREES);
+            Logging.warn(message);
+            setCacheError(message);
+            return null;
+        }
+
         return bounds;
     }
 
@@ -247,6 +260,9 @@ public abstract class AbstractExternalDataLoader implements LayerManager.LayerCh
 
     /** Clear the associated cache. */
     protected abstract void clearCache();
+
+    /** Record an error on the associated cache so the UI can display why no data was loaded. */
+    protected abstract void setCacheError(String message);
 
     /** Whether the given way is relevant for fallback bounds computation. */
     protected abstract boolean isRelevantWay(Way way);

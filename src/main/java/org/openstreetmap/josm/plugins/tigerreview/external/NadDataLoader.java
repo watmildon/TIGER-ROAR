@@ -65,6 +65,11 @@ public class NadDataLoader extends AbstractExternalDataLoader {
     }
 
     @Override
+    protected void setCacheError(String message) {
+        NadDataCache.getInstance().setError(message);
+    }
+
+    @Override
     protected boolean isRelevantWay(Way way) {
         // NAD only needs bounds from ways needing review
         return "no".equals(way.get("tiger:reviewed"));
@@ -72,6 +77,18 @@ public class NadDataLoader extends AbstractExternalDataLoader {
 
     @Override
     protected void fetchData(Bounds bounds) {
+        // Defense in depth: computeBounds() already rejects oversized areas, but this
+        // method is the one that loops over tiles firing API requests, so guard here too.
+        double area = bounds.getArea();
+        if (area > MAX_AREA_DEGREES) {
+            String message = String.format(
+                    "Area too large for NAD fetch (%.2f sq degrees > %.2f max). Download a smaller area.",
+                    area, MAX_AREA_DEGREES);
+            Logging.warn(message);
+            NadDataCache.getInstance().setError(message);
+            return;
+        }
+
         Logging.info("Starting NAD data fetch for bounds: " + bounds);
 
         List<NadTileKey> tiles = NadTileKey.tilesForBounds(bounds);

@@ -1,0 +1,3 @@
+# Regression snapshot baselines are compared byte-for-byte against
+# LF-generated output, so they must always check out with LF endings.
+*.snapshot text eol=lf
