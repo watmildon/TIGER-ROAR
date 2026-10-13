@@ -12,6 +12,8 @@ import org.openstreetmap.josm.io.IllegalDataException;
 import org.openstreetmap.josm.io.OsmReader;
 import org.openstreetmap.josm.spi.preferences.Config;
 import org.openstreetmap.josm.spi.preferences.MemoryPreferences;
+import org.openstreetmap.josm.tools.Http1Client;
+import org.openstreetmap.josm.tools.HttpClient;
 
 /**
  * Minimal JOSM subsystem initialization for unit tests.
@@ -39,6 +41,9 @@ public class JosmTestSetup implements BeforeAllCallback {
         // Projection needed by Node.getEastNorth()
         ProjectionRegistry.setProjection(
             Projections.getProjectionByCode("EPSG:4326"));
+
+        // HTTP for tests that talk to a local server (PMTiles range requests)
+        HttpClient.setFactory(Http1Client::new);
 
         initialized = true;
     }

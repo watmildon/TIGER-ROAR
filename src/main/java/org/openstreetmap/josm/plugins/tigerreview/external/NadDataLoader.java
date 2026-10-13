@@ -1,8 +1,10 @@
 // License: GPL. For details, see LICENSE file.
 package org.openstreetmap.josm.plugins.tigerreview.external;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.openstreetmap.josm.data.Bounds;
 import org.openstreetmap.josm.data.osm.Way;
@@ -24,8 +26,22 @@ import org.openstreetmap.josm.tools.Logging;
  * only tiles not already cached (or expired) are fetched from the API.
  * The in-memory cache ({@link NadDataCache}) only holds addresses for
  * tiles overlapping the current layer's bounds.
+ *
+ * <p>The address source is set by {@link TIGERReviewPreferences#PREF_NAD_URL}:
+ * the ESRI-hosted NAD layer by default, or another FeatureServer layer or a
+ * PMTiles archive (see {@link AddressSource}).
  */
 public class NadDataLoader extends AbstractExternalDataLoader {
+
+    /** Give up on the source after this many failed cells with none succeeding */
+    private static final int MAX_FAILURES_WITHOUT_SUCCESS = 3;
+
+    /**
+     * One fetch at a time. A layer being added starts a background load, and the
+     * dialog's Analyze starts one if NAD isn't ready yet; without this they would
+     * both fetch the same cells.
+     */
+    private final ReentrantLock fetchLock = new ReentrantLock();
 
     /** Singleton instance */
     private static NadDataLoader instance;
@@ -77,6 +93,26 @@ public class NadDataLoader extends AbstractExternalDataLoader {
 
     @Override
     protected void fetchData(Bounds bounds) {
+        try {
+            fetchLock.lockInterruptibly();
+        } catch (InterruptedException e) {
+            // Cancelled while waiting for another fetch
+            Thread.currentThread().interrupt();
+            return;
+        }
+        try {
+            // A fetch we waited for may already have loaded this area
+            if (NadDataCache.getInstance().covers(bounds)) {
+                Logging.info("NAD data already loaded for " + bounds + ", skipping fetch");
+                return;
+            }
+            fetchUnlocked(bounds);
+        } finally {
+            fetchLock.unlock();
+        }
+    }
+
+    private void fetchUnlocked(Bounds bounds) {
         // Defense in depth: computeBounds() already rejects oversized areas, but this
         // method is the one that loops over tiles firing API requests, so guard here too.
         double area = bounds.getArea();
@@ -94,14 +130,27 @@ public class NadDataLoader extends AbstractExternalDataLoader {
         List<NadTileKey> tiles = NadTileKey.tilesForBounds(bounds);
         Logging.info("NAD tile coverage: " + tiles.size() + " tiles for requested bounds");
 
-        NadTileStore store = NadTileStore.getInstance();
-        NadClient client = new NadClient();
+        String sourceUrl = getSourceUrl();
+        AddressSource source = AddressSource.forUrl(sourceUrl);
+        NadTileStore store = NadTileStore.forSource(sourceUrl);
+        try {
+            store.syncVersion(source.dataVersion());
+        } catch (IOException e) {
+            // Cached cells can still be used; uncached ones will report their own errors
+            Logging.warn("Could not check NAD source version: " + e.getMessage());
+        }
         List<NadAddress> allAddresses = new ArrayList<>();
         int diskHits = 0;
         int apiFetches = 0;
         int fetchErrors = 0;
 
         for (NadTileKey tile : tiles) {
+            if (Thread.currentThread().isInterrupted()) {
+                // Superseded by a newer load (e.g. the source URL changed); leave the cache to it
+                Logging.info("NAD tile loading cancelled");
+                return;
+            }
+
             // Try disk cache first
             if (store.hasFreshTile(tile)) {
                 List<NadAddress> cached = store.readTile(tile);
@@ -114,7 +163,7 @@ public class NadDataLoader extends AbstractExternalDataLoader {
             }
 
             // Fetch from API
-            NadQueryResult result = client.queryTile(tile);
+            NadQueryResult result = source.queryTile(tile);
             if (result.isSuccess()) {
                 List<NadAddress> fetched = result.addresses();
                 allAddresses.addAll(fetched);
@@ -123,6 +172,10 @@ public class NadDataLoader extends AbstractExternalDataLoader {
             } else {
                 Logging.warn("NAD tile fetch failed for " + tile.toFilename() + ": " + result.errorMessage());
                 fetchErrors++;
+                if (apiFetches == 0 && fetchErrors >= MAX_FAILURES_WITHOUT_SUCCESS) {
+                    Logging.warn("NAD source failing repeatedly, giving up on remaining tiles");
+                    break;
+                }
             }
 
             // Safety limit across all tiles
@@ -145,6 +198,14 @@ public class NadDataLoader extends AbstractExternalDataLoader {
 
         // Run eviction check in background (non-critical)
         store.evictIfNeeded();
+    }
+
+    /**
+     * The configured address source URL, or the default ESRI NAD layer when unset.
+     */
+    public static String getSourceUrl() {
+        String url = Config.getPref().get(TIGERReviewPreferences.PREF_NAD_URL, TIGERReviewPreferences.DEFAULT_NAD_URL);
+        return url == null || url.isBlank() ? TIGERReviewPreferences.DEFAULT_NAD_URL : url.trim();
     }
 
     /**

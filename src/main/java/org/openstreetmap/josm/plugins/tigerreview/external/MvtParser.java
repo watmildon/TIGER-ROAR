@@ -10,7 +10,7 @@ import java.util.List;
  * Minimal parser for Mapbox Vector Tiles (MVT) protobuf format.
  *
  * <p>Only supports the subset needed for reading point features with
- * string/integer properties from Mapillary traffic sign tiles.
+ * string/integer properties (Mapillary traffic sign tiles, PMTiles address points).
  * Implements raw protobuf wire format decoding without external libraries.</p>
  *
  * @see <a href="https://github.com/mapbox/vector-tile-spec/blob/master/2.1/vector_tile.proto">MVT 2.1 spec</a>
@@ -75,6 +75,33 @@ final class MvtParser {
             int x = zigzagDecode(geometry.get(1));
             int y = zigzagDecode(geometry.get(2));
             return new int[]{x, y};
+        }
+
+        /**
+         * Decode every point of a point or multipoint geometry to tile-relative
+         * coordinates [x, y]. Returns an empty list if the geometry has no MoveTo.
+         */
+        List<int[]> decodePoints() {
+            List<int[]> points = new ArrayList<>();
+            int x = 0;
+            int y = 0;
+            int i = 0;
+            while (i < geometry.size()) {
+                int cmdInt = geometry.get(i++);
+                int cmd = cmdInt & 0x7;
+                int count = cmdInt >>> 3;
+                if (cmd != 1) {
+                    // Points only use MoveTo; skip the parameters of anything else (ClosePath has none)
+                    i += cmd == 2 ? count * 2 : 0;
+                    continue;
+                }
+                for (int k = 0; k < count && i + 1 < geometry.size(); k++) {
+                    x += zigzagDecode(geometry.get(i++));
+                    y += zigzagDecode(geometry.get(i++));
+                    points.add(new int[]{x, y});
+                }
+            }
+            return points;
         }
 
         private static int zigzagDecode(int n) {

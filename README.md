@@ -10,7 +10,7 @@ Companion tool to [TIGERMap](https://watmildon.github.io/TIGERMap/).
 
 ## What it does
 
-**Name verification** - checks whether connected roads, nearby OSM addresses, parallel carriageways, or etymology tags agree on a road's name. ROAR can optionally query the ESRI [National Address Database](https://www.transportation.gov/gis/national-address-database) endpoint to corroborate road names. Enable it in **Preferences → TIGER ROAR**.
+**Name verification** - checks whether connected roads, nearby OSM addresses, parallel carriageways, or etymology tags agree on a road's name. ROAR can optionally query the ESRI [National Address Database](https://www.transportation.gov/gis/national-address-database) endpoint to corroborate road names. Enable it in **Preferences → TIGER ROAR**, where **NAD source** can also point at another ArcGIS FeatureServer layer with the NAD schema or a [PMTiles](https://github.com/protomaps/PMTiles) archive of address points, such as the preset `https://nad.watmildon.org/nad-current.pmtiles` (a copy of the NAD cleaned for OpenStreetMap).
 
 **Alignment verification** - checks whether a road's nodes have been moved or edited by humans, not just bots from the original TIGER import.
 

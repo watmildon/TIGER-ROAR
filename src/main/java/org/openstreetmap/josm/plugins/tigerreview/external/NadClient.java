@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,12 +21,16 @@ import org.openstreetmap.josm.tools.Logging;
  * Uses JOSM's HttpClient and the GeoJSON response format, matching the query style
  * used by MapWithAI and the Rapid editor against this ESRI Feature Server.
  *
- * Endpoint: https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0
+ * Default endpoint: https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0
+ *
+ * <p>Another FeatureServer layer can be used instead, as long as it has the NAD schema
+ * ({@code addr_street}, {@code addr_housenumber}, ...).
  */
-public class NadClient {
+public class NadClient implements AddressSource {
 
-    private static final String NAD_BASE_URL =
-            "https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0/query";
+    /** The ESRI-hosted NAD FeatureServer layer */
+    public static final String DEFAULT_SERVICE_URL =
+            "https://services6.arcgis.com/Do88DoK2xjTUCXd1/arcgis/rest/services/USA_NAD_Addresses/FeatureServer/0";
 
     /** Maximum features per request (ESRI limit is 2000) */
     private static final int MAX_FEATURES_PER_REQUEST = 2000;
@@ -72,6 +77,36 @@ public class NadClient {
         }
     }
 
+    /** The layer's query endpoint */
+    private final String queryUrl;
+
+    /**
+     * Create a client for the default ESRI-hosted NAD layer.
+     */
+    public NadClient() {
+        this(DEFAULT_SERVICE_URL);
+    }
+
+    /**
+     * Create a client for a FeatureServer layer.
+     *
+     * @param serviceUrl the layer URL, with or without the trailing {@code /query}
+     */
+    public NadClient(String serviceUrl) {
+        this.queryUrl = queryEndpoint(serviceUrl);
+    }
+
+    /**
+     * The query endpoint of a FeatureServer layer URL.
+     */
+    static String queryEndpoint(String serviceUrl) {
+        String url = serviceUrl.trim();
+        while (url.endsWith("/")) {
+            url = url.substring(0, url.length() - 1);
+        }
+        return url.endsWith("/query") ? url : url + "/query";
+    }
+
     /**
      * Query NAD addresses for a single tile.
      * Tile bounds are small enough that the area check is skipped.
@@ -79,6 +114,7 @@ public class NadClient {
      * @param tileKey The tile to fetch
      * @return Query result containing addresses or error
      */
+    @Override
     public NadQueryResult queryTile(NadTileKey tileKey) {
         return queryAddresses(tileKey.toBounds(), false);
     }
@@ -189,13 +225,14 @@ public class NadClient {
      * Uses the minimal parameter set that works with this ESRI Feature Server,
      * matching the format used by the Rapid editor and MapWithAI plugin.
      */
-    private String buildQueryUrl(Bounds bounds, int offset) {
-        // ESRI envelope format: xmin,ymin,xmax,ymax (lon,lat,lon,lat)
-        String geometry = String.format("%f,%f,%f,%f",
+    String buildQueryUrl(Bounds bounds, int offset) {
+        // ESRI envelope format: xmin,ymin,xmax,ymax (lon,lat,lon,lat).
+        // Locale.ROOT: a decimal-comma locale would otherwise garble the envelope.
+        String geometry = String.format(Locale.ROOT, "%f,%f,%f,%f",
                 bounds.getMinLon(), bounds.getMinLat(),
                 bounds.getMaxLon(), bounds.getMaxLat());
 
-        return NAD_BASE_URL
+        return queryUrl
                 + "?f=geojson"
                 + "&geometry=" + geometry
                 + "&geometryType=esriGeometryEnvelope"

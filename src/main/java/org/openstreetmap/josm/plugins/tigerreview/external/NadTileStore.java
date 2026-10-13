@@ -5,14 +5,21 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import org.openstreetmap.josm.data.coor.LatLon;
 import org.openstreetmap.josm.plugins.tigerreview.external.NadClient.NadAddress;
@@ -26,8 +33,14 @@ import org.openstreetmap.josm.tools.Logging;
  * JOSM cache directory under {@code tiger-roar/nad/}. The first line is
  * metadata (fetch timestamp); subsequent lines are address records.
  *
+ * <p>Each address source has its own directory: the default ESRI NAD layer uses
+ * {@code tiger-roar/nad/} itself, and any other URL a subdirectory named from a
+ * hash of the URL. A source that reports a data version (a PMTiles ETag) has its
+ * tiles discarded when that version changes.
+ *
  * <p>Writes are atomic (write to temp file, then rename) to prevent corruption.
- * Eviction removes the oldest tiles when total cache size exceeds 100 MB.
+ * Eviction removes the oldest tiles across all sources when total cache size
+ * exceeds 100 MB.
  */
 public class NadTileStore {
 
@@ -40,31 +53,82 @@ public class NadTileStore {
     /** Tile time-to-live in milliseconds (30 days) */
     private static final long TILE_TTL_MS = 30L * 24 * 60 * 60 * 1000;
 
-    /** Singleton instance */
-    private static NadTileStore instance;
+    /** File in a source's directory holding the data version its tiles came from */
+    private static final String VERSION_FILE = "version.txt";
 
-    /** Cache directory path */
+    /** Instances by source URL */
+    private static final Map<String, NadTileStore> INSTANCES = new HashMap<>();
+
+    /** Root of all NAD tile caches, for eviction across sources */
+    private final Path rootDir;
+
+    /** Cache directory path for this source */
     private final Path cacheDir;
 
-    private NadTileStore(Path cacheDir) {
+    NadTileStore(Path rootDir, Path cacheDir) {
+        this.rootDir = rootDir;
         this.cacheDir = cacheDir;
+        try {
+            Files.createDirectories(cacheDir);
+        } catch (IOException e) {
+            Logging.warn("Failed to create NAD tile cache directory: " + e.getMessage());
+        }
     }
 
     /**
-     * Get the singleton instance, creating the cache directory if needed.
+     * Get the store for an address source URL, creating its cache directory if needed.
      */
-    public static synchronized NadTileStore getInstance() {
-        if (instance == null) {
+    public static synchronized NadTileStore forSource(String sourceUrl) {
+        String url = sourceUrl.trim();
+        return INSTANCES.computeIfAbsent(url, u -> {
             File josmCache = Config.getDirs().getCacheDirectory(true);
-            Path dir = josmCache.toPath().resolve("tiger-roar").resolve("nad");
-            try {
-                Files.createDirectories(dir);
-            } catch (IOException e) {
-                Logging.warn("Failed to create NAD tile cache directory: " + e.getMessage());
-            }
-            instance = new NadTileStore(dir);
+            Path root = josmCache.toPath().resolve("tiger-roar").resolve("nad");
+            return new NadTileStore(root, sourceDir(root, u));
+        });
+    }
+
+    /**
+     * The cache directory for a source URL. The default ESRI layer keeps the original
+     * top-level directory so caches from earlier versions stay valid.
+     */
+    static Path sourceDir(Path root, String sourceUrl) {
+        if (NadClient.queryEndpoint(sourceUrl).equals(NadClient.queryEndpoint(NadClient.DEFAULT_SERVICE_URL))) {
+            return root;
         }
-        return instance;
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(sourceUrl.getBytes(StandardCharsets.UTF_8));
+            return root.resolve("src-" + HexFormat.of().formatHex(hash, 0, 8));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e); // SHA-256 is always available
+        }
+    }
+
+    /**
+     * Discard this source's cached tiles if they came from a different data version than
+     * {@code version}, then record {@code version}. Does nothing when {@code version} is null.
+     */
+    public synchronized void syncVersion(String version) {
+        if (version == null) {
+            return;
+        }
+        Path file = cacheDir.resolve(VERSION_FILE);
+        try {
+            String stored = Files.exists(file) ? Files.readString(file, StandardCharsets.UTF_8).trim() : null;
+            if (version.equals(stored)) {
+                return;
+            }
+            if (stored != null) {
+                Logging.info("NAD source data changed, discarding cached tiles in " + cacheDir.getFileName());
+            }
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(cacheDir, "tile_*.ndjson")) {
+                for (Path path : stream) {
+                    Files.deleteIfExists(path);
+                }
+            }
+            Files.writeString(file, version, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            Logging.warn("Failed to check NAD tile cache version: " + e.getMessage());
+        }
     }
 
     /**
@@ -184,13 +248,19 @@ public class NadTileStore {
             long totalSize = 0;
             List<TileFileInfo> tileFiles = new ArrayList<>();
 
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(cacheDir, "tile_*.ndjson")) {
-                for (Path path : stream) {
-                    long size = Files.size(path);
-                    long lastModified = Files.getLastModifiedTime(path).toMillis();
-                    totalSize += size;
-                    tileFiles.add(new TileFileInfo(path, size, lastModified));
-                }
+            // Every source's directory: the root and its src-* subdirectories
+            List<Path> paths;
+            try (Stream<Path> walk = Files.walk(rootDir, 2)) {
+                paths = walk.filter(path -> {
+                    String name = path.getFileName().toString();
+                    return name.startsWith("tile_") && name.endsWith(".ndjson");
+                }).toList();
+            }
+            for (Path path : paths) {
+                long size = Files.size(path);
+                long lastModified = Files.getLastModifiedTime(path).toMillis();
+                totalSize += size;
+                tileFiles.add(new TileFileInfo(path, size, lastModified));
             }
 
             if (totalSize <= MAX_CACHE_BYTES) {

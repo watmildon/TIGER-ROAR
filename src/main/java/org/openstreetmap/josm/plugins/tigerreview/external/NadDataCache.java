@@ -137,6 +137,22 @@ public class NadDataCache {
     }
 
     /**
+     * Whether the cache is loaded and its data covers the given bounds.
+     */
+    public boolean covers(Bounds bounds) {
+        lock.readLock().lock();
+        try {
+            return ready && cachedBounds != null
+                    && cachedBounds.getMinLat() <= bounds.getMinLat()
+                    && cachedBounds.getMinLon() <= bounds.getMinLon()
+                    && cachedBounds.getMaxLat() >= bounds.getMaxLat()
+                    && cachedBounds.getMaxLon() >= bounds.getMaxLon();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    /**
      * Set an error state for the cache.
      */
     public void setError(String message) {

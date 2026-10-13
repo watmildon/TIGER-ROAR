@@ -11,6 +11,7 @@ import java.awt.BorderLayout;
 
 import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JSpinner;
@@ -19,6 +20,9 @@ import javax.swing.SpinnerNumberModel;
 
 import org.openstreetmap.josm.gui.preferences.DefaultTabPreferenceSetting;
 import org.openstreetmap.josm.gui.preferences.PreferenceTabbedPane;
+import org.openstreetmap.josm.plugins.tigerreview.external.NadClient;
+import org.openstreetmap.josm.plugins.tigerreview.external.NadDataCache;
+import org.openstreetmap.josm.plugins.tigerreview.external.NadDataLoader;
 import org.openstreetmap.josm.spi.preferences.Config;
 
 /**
@@ -49,6 +53,15 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
 
     /** Preference key for NAD maximum address matching distance */
     public static final String PREF_NAD_MAX_DISTANCE = "tigerreview.nad.maxDistance";
+
+    /** Preference key for the NAD address source URL (ArcGIS FeatureServer layer or .pmtiles archive) */
+    public static final String PREF_NAD_URL = "tigerreview.nad.url";
+
+    /** Default NAD address source: the ESRI-hosted NAD FeatureServer layer */
+    public static final String DEFAULT_NAD_URL = NadClient.DEFAULT_SERVICE_URL;
+
+    /** Preset NAD address source: a PMTiles copy of the NAD cleaned for OpenStreetMap */
+    public static final String NAD_PMTILES_PRESET_URL = "https://nad.watmildon.org/nad-current.pmtiles";
 
     /** Preference key for additional bot/importer usernames (semicolon-delimited) */
     public static final String PREF_ADDITIONAL_BOT_USERNAMES = "tigerreview.node.additionalBotUsernames";
@@ -112,6 +125,7 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
     private JSpinner nodeVersionSpinner;
     private JSpinner nodePercentageSpinner;
     private JSpinner nadDistanceSpinner;
+    private JComboBox<String> nadUrlComboBox;
     private JCheckBox connectedRoadCheckBox;
     private JCheckBox dualCarriageCheckBox;
     private JCheckBox addressCheckBox;
@@ -176,6 +190,19 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
                 tr("NAD matching distance (m):"), nadDistanceSpinner,
                 tr("(default: {0})", DEFAULT_NAD_MAX_DISTANCE),
                 tr("Maximum distance to search for corroborating NAD addresses"));
+
+        nadUrlComboBox = new JComboBox<>(new String[] {DEFAULT_NAD_URL, NAD_PMTILES_PRESET_URL});
+        nadUrlComboBox.setEditable(true);
+        nadUrlComboBox.setSelectedItem(NadDataLoader.getSourceUrl());
+        nadUrlComboBox.setPreferredSize(new java.awt.Dimension(320, addressDistanceSpinner.getPreferredSize().height));
+        addLabeledRow(namePanel, gbc, row++,
+                tr("NAD source:"), nadUrlComboBox,
+                tr("(default: ESRI NAD)"),
+                tr("<html>Where NAD addresses are downloaded from. Either:<ul>"
+                        + "<li>an ArcGIS FeatureServer layer with the NAD schema (the default ESRI-hosted NAD), or</li>"
+                        + "<li>a PMTiles archive of address points (URL ending in .pmtiles), such as<br>{0},<br>"
+                        + "a copy of the NAD cleaned for OpenStreetMap</li></ul>"
+                        + "Changing the source reloads NAD data for the active layer.</html>", NAD_PMTILES_PRESET_URL));
 
         dualCarriageCheckBox = new JCheckBox(tr("Dual carriageway check"));
         dualCarriageCheckBox.setToolTipText(
@@ -356,10 +383,31 @@ public class TIGERReviewPreferences extends DefaultTabPreferenceSetting {
         // Convert percentage (0-100) back to decimal (0.0-1.0) for storage
         Config.getPref().putDouble(PREF_NODE_MIN_PERCENTAGE_EDITED, (Double) nodePercentageSpinner.getValue() / 100.0);
         Config.getPref().putDouble(PREF_NAD_MAX_DISTANCE, (Double) nadDistanceSpinner.getValue());
+        saveNadUrl();
         Config.getPref().putDouble(PREF_DUAL_CARRIAGE_MAX_DISTANCE, (Double) dualCarriageDistanceSpinner.getValue());
         Config.getPref().put(PREF_ADDITIONAL_BOT_USERNAMES, additionalBotUsernamesField.getText().trim());
         Config.getPref().putDouble(PREF_NODE_MIN_POST_TIGER_ID, (Double) postTigerIdSpinner.getValue());
 
         return false; // No restart required
+    }
+
+    /**
+     * Save the NAD source URL; if it changed, drop the loaded NAD addresses and
+     * reload them from the new source for the active layer.
+     */
+    private void saveNadUrl() {
+        Object selected = nadUrlComboBox.getEditor().getItem();
+        String url = selected == null ? "" : selected.toString().trim();
+        if (url.isEmpty()) {
+            url = DEFAULT_NAD_URL;
+        }
+        if (url.equals(NadDataLoader.getSourceUrl())) {
+            return;
+        }
+        Config.getPref().put(PREF_NAD_URL, url);
+        NadDataCache.getInstance().clear();
+        if (nadCheckBox.isSelected()) {
+            NadDataLoader.getInstance().refreshNadData();
+        }
     }
 }
